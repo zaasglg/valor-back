@@ -136,9 +136,14 @@ def refresh_token(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_user_info(request):
+	print(f"Authenticated user: {request.user}")
+	print(f"User email: {request.user.email}")
+	print(f"User ID: {request.user.id}")
+	
 	try:
 		user = UserProfile.objects.get(email=request.user.email)
 		serializer = UserRegisterSerializer(user)
 		return Response(serializer.data)
 	except UserProfile.DoesNotExist:
-		return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+		print(f"UserProfile not found for email: {request.user.email}")
+		return Response({"error": "User not found.", "debug": {"email": request.user.email}}, status=status.HTTP_404_NOT_FOUND)
