@@ -26,11 +26,10 @@ class UserRegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = [
-            'user_id', 'email', 'password', 'country',
+            'email', 'password', 'country',
             'ref', 'nombre', 'apellido', 'cumpleanos', 'sexo', 'ciudad', 'direccion', 'numero_de_telefono'
         ]
         extra_kwargs = {
-            'user_id': {'required': False},
             'password': {'write_only': True},
             'ref': {'required': False, 'allow_blank': True, 'allow_null': True},
             'nombre': {'required': False, 'allow_blank': True, 'allow_null': True},
