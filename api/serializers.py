@@ -19,14 +19,26 @@ class CountrySerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'currency']
 
 
+
+
 class UserRegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = [
-            'user_id', 'ref', 'email', 'password', 'country', 'nombre', 'apellido',
-            'cumpleanos', 'sexo', 'ciudad', 'direccion', 'numero_de_telefono'
+            'email', 'password', 'country',
+            'ref', 'nombre', 'apellido', 'cumpleanos', 'sexo', 'ciudad', 'direccion', 'numero_de_telefono'
         ]
-        extra_kwargs = {'password': {'write_only': True}}
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'ref': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'nombre': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'apellido': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'cumpleanos': {'required': False, 'allow_null': True},
+            'sexo': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'ciudad': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'direccion': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'numero_de_telefono': {'required': False, 'allow_blank': True, 'allow_null': True},
+        }
 
     def create(self, validated_data):
         # Hash the password before saving

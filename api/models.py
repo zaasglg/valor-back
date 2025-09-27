@@ -1,8 +1,9 @@
 from django.db import models
 
 
+import random
 class UserProfile(models.Model):
-	user_id = models.BigIntegerField(unique=True)
+	user_id = models.BigIntegerField(unique=True, editable=False, blank=True, null=True)
 	ref = models.CharField(max_length=155, blank=True, null=True)
 	email = models.CharField(max_length=255, unique=True)
 	password = models.CharField(max_length=255)
@@ -25,6 +26,17 @@ class UserProfile(models.Model):
 	stage_balance = models.DecimalField(max_digits=19, decimal_places=2, default=120.00)
 	verification_start_date = models.DateTimeField(blank=True, null=True)
 	chicken_trap_coefficient = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+
+
+	def save(self, *args, **kwargs):
+		if not self.user_id:
+			# Generate a unique user_id
+			while True:
+				new_id = random.randint(100000, 999999999)
+				if not UserProfile.objects.filter(user_id=new_id).exists():
+					self.user_id = new_id
+					break
+		super().save(*args, **kwargs)
 
 	def __str__(self):
 		return self.email
