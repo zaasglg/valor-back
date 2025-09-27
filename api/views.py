@@ -82,7 +82,19 @@ from rest_framework_simplejwt.tokens import RefreshToken
 @permission_classes([AllowAny])
 def register(request):
 	if request.method == "GET":
-		return Response({"message": "Please provide registration details"})
+		return Response({
+			"email": "",
+			"password": "",
+			"country": "",
+			"ref": "",
+			"nombre": "",
+			"apellido": "",
+			"cumpleanos": "",
+			"sexo": "",
+			"ciudad": "",
+			"direccion": "",
+			"numero_de_telefono": ""
+		})
 	
 	serializer = UserRegisterSerializer(data=request.data)
 	if serializer.is_valid():
@@ -106,7 +118,10 @@ def register(request):
 @permission_classes([AllowAny])
 def login(request):
 	if request.method == "GET":
-		return Response({"message": "Please provide email and password to login"})
+		return Response({
+			"email": "",
+			"password": ""
+		})
 	
 	email = request.data.get("email")
 	password = request.data.get("password")
@@ -124,9 +139,14 @@ def login(request):
 	except User.DoesNotExist:
 		return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 @permission_classes([AllowAny])
 def refresh_token(request):
+	if request.method == "GET":
+		return Response({
+			"refresh": ""
+		})
+	
 	refresh_token = request.data.get("refresh")
 	if not refresh_token:
 		return Response({"error": "Refresh token required"}, status=status.HTTP_400_BAD_REQUEST)
