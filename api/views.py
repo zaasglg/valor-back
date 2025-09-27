@@ -113,9 +113,15 @@ def login(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_user_info(request):
+	# Debug info
+	print(f"User ID: {request.user.id}")
+	print(f"User: {request.user}")
+	print(f"User type: {type(request.user)}")
+	
 	try:
-		user = UserProfile.objects.get(user_id=request.user.id)
+		# Try to find by email first
+		user = UserProfile.objects.get(email=request.user.username)
 		serializer = UserRegisterSerializer(user)
 		return Response(serializer.data)
 	except UserProfile.DoesNotExist:
-		return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+		return Response({"error": "User not found.", "debug": {"user_id": request.user.id, "username": request.user.username}}, status=status.HTTP_404_NOT_FOUND)
