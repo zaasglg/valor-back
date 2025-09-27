@@ -45,6 +45,16 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         # Hash the password before saving
         from django.contrib.auth.hashers import make_password
         validated_data['password'] = make_password(validated_data['password'])
+        
+        # Generate user_id if not provided
+        if 'user_id' not in validated_data or not validated_data['user_id']:
+            import random
+            while True:
+                new_id = random.randint(100000, 999999999)
+                if not UserProfile.objects.filter(user_id=new_id).exists():
+                    validated_data['user_id'] = new_id
+                    break
+        
         return super().create(validated_data)
 
 
