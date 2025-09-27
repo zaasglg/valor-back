@@ -21,7 +21,7 @@ from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
 
-from api.views import hello_world, register, login, get_countries, transactions_list, transaction_create, update_profile, historial_pagos_list, historial_pagos_create
+from api.views import hello_world, register, login, get_countries, transactions_list, transaction_create, update_profile, historial_pagos_list, historial_pagos_create, get_user_info
 
 
 urlpatterns = [
@@ -35,6 +35,7 @@ urlpatterns = [
     path("api/profile/update/", update_profile, name="update_profile"),
     path("api/historial_pagos/", historial_pagos_list, name="historial_pagos_list"),
     path("api/historial_pagos/create/", historial_pagos_create, name="historial_pagos_create"),
+    path("api/user/info/", get_user_info, name="get_user_info"),
 ]
 
 if settings.DEBUG:

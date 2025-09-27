@@ -109,3 +109,13 @@ def login(request):
 			return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
 	except UserProfile.DoesNotExist:
 		return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_user_info(request):
+	try:
+		user = UserProfile.objects.get(email=request.user.email)
+		serializer = UserRegisterSerializer(user)
+		return Response(serializer.data)
+	except UserProfile.DoesNotExist:
+		return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
