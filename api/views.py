@@ -78,24 +78,9 @@ def hello_world(request):
 
 from rest_framework_simplejwt.tokens import RefreshToken
 
-@api_view(["GET", "POST"])
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def register(request):
-	if request.method == "GET":
-		return Response({
-			"email": "",
-			"password": "",
-			"country": "",
-			"ref": "",
-			"nombre": "",
-			"apellido": "",
-			"cumpleanos": "",
-			"sexo": "",
-			"ciudad": "",
-			"direccion": "",
-			"numero_de_telefono": ""
-		})
-	
 	serializer = UserRegisterSerializer(data=request.data)
 	if serializer.is_valid():
 		user_profile = serializer.save()
@@ -114,15 +99,9 @@ def register(request):
 		return Response(data, status=status.HTTP_201_CREATED)
 	return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(["GET", "POST"])
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def login(request):
-	if request.method == "GET":
-		return Response({
-			"email": "",
-			"password": ""
-		})
-	
 	email = request.data.get("email")
 	password = request.data.get("password")
 	try:
@@ -139,14 +118,9 @@ def login(request):
 	except User.DoesNotExist:
 		return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-@api_view(["GET", "POST"])
+@api_view(["POST"])
 @permission_classes([AllowAny])
 def refresh_token(request):
-	if request.method == "GET":
-		return Response({
-			"refresh": ""
-		})
-	
 	refresh_token = request.data.get("refresh")
 	if not refresh_token:
 		return Response({"error": "Refresh token required"}, status=status.HTTP_400_BAD_REQUEST)
