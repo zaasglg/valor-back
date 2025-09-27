@@ -83,9 +83,16 @@ from rest_framework_simplejwt.tokens import RefreshToken
 def register(request):
 	serializer = UserRegisterSerializer(data=request.data)
 	if serializer.is_valid():
-		user = serializer.save()
-		# Generate JWT token for the new user
-		refresh = RefreshToken.for_user(user)
+		user_profile = serializer.save()
+		# Create Django User for JWT
+		from django.contrib.auth.models import User
+		django_user = User.objects.create_user(
+			username=user_profile.email,
+			email=user_profile.email,
+			password=request.data.get('password')
+		)
+		# Generate JWT token
+		refresh = RefreshToken.for_user(django_user)
 		data = serializer.data.copy()
 		data["refresh"] = str(refresh)
 		data["access"] = str(refresh.access_token)
@@ -98,30 +105,40 @@ def login(request):
 	email = request.data.get("email")
 	password = request.data.get("password")
 	try:
-		user = UserProfile.objects.get(email=email)
-		if check_password(password, user.password):
-			refresh = RefreshToken.for_user(user)
+		from django.contrib.auth.models import User
+		django_user = User.objects.get(email=email)
+		if django_user.check_password(password):
+			refresh = RefreshToken.for_user(django_user)
 			return Response({
 				"refresh": str(refresh),
 				"access": str(refresh.access_token),
 			})
 		else:
 			return Response({"detail": "Invalid credentials."}, status=status.HTTP_401_UNAUTHORIZED)
-	except UserProfile.DoesNotExist:
+	except User.DoesNotExist:
 		return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def refresh_token(request):
+	refresh_token = request.data.get("refresh")
+	if not refresh_token:
+		return Response({"error": "Refresh token required"}, status=status.HTTP_400_BAD_REQUEST)
+	
+	try:
+		refresh = RefreshToken(refresh_token)
+		return Response({
+			"access": str(refresh.access_token),
+		})
+	except Exception as e:
+		return Response({"error": "Invalid refresh token"}, status=status.HTTP_401_UNAUTHORIZED)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_user_info(request):
-	# Debug info
-	print(f"User ID: {request.user.id}")
-	print(f"User: {request.user}")
-	print(f"User type: {type(request.user)}")
-	
 	try:
-		# Try to find by email first
-		user = UserProfile.objects.get(email=request.user.username)
+		user = UserProfile.objects.get(email=request.user.email)
 		serializer = UserRegisterSerializer(user)
 		return Response(serializer.data)
 	except UserProfile.DoesNotExist:
-		return Response({"error": "User not found.", "debug": {"user_id": request.user.id, "username": request.user.username}}, status=status.HTTP_404_NOT_FOUND)
+		return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
