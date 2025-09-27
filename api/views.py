@@ -114,7 +114,7 @@ def login(request):
 @permission_classes([IsAuthenticated])
 def get_user_info(request):
 	try:
-		user = UserProfile.objects.get(email=request.user.email)
+		user = UserProfile.objects.get(user_id=request.user.id)
 		serializer = UserRegisterSerializer(user)
 		return Response(serializer.data)
 	except UserProfile.DoesNotExist:
