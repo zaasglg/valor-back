@@ -78,9 +78,12 @@ def hello_world(request):
 
 from rest_framework_simplejwt.tokens import RefreshToken
 
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 @permission_classes([AllowAny])
 def register(request):
+	if request.method == "GET":
+		return Response({"message": "Please provide registration details"})
+	
 	serializer = UserRegisterSerializer(data=request.data)
 	if serializer.is_valid():
 		user_profile = serializer.save()
@@ -99,9 +102,12 @@ def register(request):
 		return Response(data, status=status.HTTP_201_CREATED)
 	return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 @permission_classes([AllowAny])
 def login(request):
+	if request.method == "GET":
+		return Response({"message": "Please provide email and password to login"})
+	
 	email = request.data.get("email")
 	password = request.data.get("password")
 	try:
