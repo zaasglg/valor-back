@@ -142,8 +142,32 @@ def get_user_info(request):
 	
 	try:
 		user = UserProfile.objects.get(email=request.user.email)
-		serializer = UserRegisterSerializer(user)
-		return Response(serializer.data)
+		# Возвращаем все поля модели
+		data = {
+			'user_id': user.user_id,
+			'email': user.email,
+			'deposit': user.deposit,
+			'country': user.country,
+			'ref': user.ref,
+			'nombre': user.nombre,
+			'apellido': user.apellido,
+			'cumpleanos': user.cumpleanos,
+			'sexo': user.sexo,
+			'ciudad': user.ciudad,
+			'direccion': user.direccion,
+			'numero_de_telefono': user.numero_de_telefono,
+			'bonificaciones': user.bonificaciones,
+			'registration_date': user.registration_date,
+			'status': user.status,
+			'positions_mine': user.positions_mine,
+			'col_deposit': user.col_deposit,
+			'user_status': user.user_status,
+			'stage': user.stage,
+			'stage_balance': user.stage_balance,
+			'verification_start_date': user.verification_start_date,
+			'chicken_trap_coefficient': user.chicken_trap_coefficient
+		}
+		return Response(data)
 	except UserProfile.DoesNotExist:
 		print(f"UserProfile not found for email: {request.user.email}")
 		return Response({"error": "User not found.", "debug": {"email": request.user.email}}, status=status.HTTP_404_NOT_FOUND)
