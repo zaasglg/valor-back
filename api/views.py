@@ -75,13 +75,21 @@ from rest_framework_simplejwt.tokens import RefreshToken
 def hello_world(request):
 	return Response({"message": "Hello, world!"})
 
+
+from rest_framework_simplejwt.tokens import RefreshToken
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register(request):
 	serializer = UserRegisterSerializer(data=request.data)
 	if serializer.is_valid():
-		serializer.save()
-		return Response(serializer.data, status=status.HTTP_201_CREATED)
+		user = serializer.save()
+		# Generate JWT token for the new user
+		refresh = RefreshToken.for_user(user)
+		data = serializer.data.copy()
+		data["refresh"] = str(refresh)
+		data["access"] = str(refresh.access_token)
+		return Response(data, status=status.HTTP_201_CREATED)
 	return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(["POST"])
