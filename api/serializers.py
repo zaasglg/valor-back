@@ -21,6 +21,7 @@ class CountrySerializer(serializers.ModelSerializer):
 
 
 
+
 class UserRegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
