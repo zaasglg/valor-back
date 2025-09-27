@@ -23,7 +23,7 @@ class CountrySerializer(serializers.ModelSerializer):
 
 
 class UserRegisterSerializer(serializers.ModelSerializer):
-    user_id = serializers.IntegerField(required=False, allow_null=True)
+    user_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     
     class Meta:
         model = UserProfile
