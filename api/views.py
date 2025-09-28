@@ -28,7 +28,7 @@ def historial_pagos_create(request):
 def update_profile(request):
 	user = request.user
 	try:
-		profile = UserProfile.objects.get(email=user.email)
+		profile = UserProfile.objects.get(django_user=user)
 	except UserProfile.DoesNotExist:
 		return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -91,6 +91,9 @@ def register(request):
 			email=user_profile.email,
 			password=request.data.get('password')
 		)
+		# Link UserProfile to Django User
+		user_profile.django_user = django_user
+		user_profile.save()
 		# Generate JWT token
 		refresh = RefreshToken.for_user(django_user)
 		data = serializer.data.copy()
@@ -141,7 +144,7 @@ def get_user_info(request):
 	print(f"User ID: {request.user.id}")
 	
 	try:
-		user = UserProfile.objects.get(user_id=request.user.id)
+		user = UserProfile.objects.get(django_user=request.user)
 		# Возвращаем все поля модели
 		data = {
 			'user_id': user.user_id,
@@ -169,5 +172,5 @@ def get_user_info(request):
 		}
 		return Response(data)
 	except UserProfile.DoesNotExist:
-		print(f"UserProfile not found for user_id: {request.user.id}")
+		print(f"UserProfile not found for user: {request.user.id}")
 		return Response({"error": "User not found.", "debug": {"user_id": request.user.id}}, status=status.HTTP_404_NOT_FOUND)

@@ -1,8 +1,9 @@
 from django.db import models
-
+from django.contrib.auth.models import User
 
 import random
 class UserProfile(models.Model):
+	django_user = models.OneToOneField(User, on_delete=models.CASCADE, null=True, blank=True)
 	user_id = models.BigIntegerField(unique=True, editable=False, blank=True, null=True)
 	ref = models.CharField(max_length=155, blank=True, null=True)
 	email = models.CharField(max_length=255, unique=True)
