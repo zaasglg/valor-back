@@ -141,7 +141,7 @@ def get_user_info(request):
 	print(f"User ID: {request.user.id}")
 	
 	try:
-		user = UserProfile.objects.get(email=request.user.email)
+		user = UserProfile.objects.get(user_id=request.user.id)
 		# Возвращаем все поля модели
 		data = {
 			'user_id': user.user_id,
@@ -169,5 +169,5 @@ def get_user_info(request):
 		}
 		return Response(data)
 	except UserProfile.DoesNotExist:
-		print(f"UserProfile not found for email: {request.user.email}")
-		return Response({"error": "User not found.", "debug": {"email": request.user.email}}, status=status.HTTP_404_NOT_FOUND)
+		print(f"UserProfile not found for user_id: {request.user.id}")
+		return Response({"error": "User not found.", "debug": {"user_id": request.user.id}}, status=status.HTTP_404_NOT_FOUND)
