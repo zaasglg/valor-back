@@ -56,6 +56,9 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         exclude = ['user_id', 'registration_date']
+        extra_kwargs = {
+            'password': {'required': False, 'allow_blank': True, 'allow_null': True},
+        }
 
     def update(self, instance, validated_data):
         # If password is being updated, hash it
