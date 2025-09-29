@@ -184,12 +184,30 @@ def get_user_info(request):
 	
 	try:
 		user = UserProfile.objects.get(django_user=request.user)
+		
+		# Получаем информацию о стране и валюте
+		country_info = None
+		if user.country:
+			try:
+				from .models import Country
+				country_obj = Country.objects.get(name=user.country)
+				country_info = {
+					'name': country_obj.name,
+					'currency': country_obj.currency
+				}
+			except Country.DoesNotExist:
+				country_info = {
+					'name': user.country,
+					'currency': None
+				}
+		
 		# Возвращаем все поля модели
 		data = {
 			'user_id': user.user_id,
 			'email': user.email,
 			'deposit': user.deposit,
 			'country': user.country,
+			'country_info': country_info,  # Добавляем информацию о стране и валюте
 			'ref': user.ref,
 			'nombre': user.nombre,
 			'apellido': user.apellido,
