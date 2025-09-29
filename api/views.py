@@ -4,11 +4,19 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status
 from .models import UserProfile, HistorialPagos
 from .serializers import UserRegisterSerializer, CountrySerializer, TransactionSerializer, UserProfileUpdateSerializer, HistorialPagosSerializer
-# API: List all historial pagos
+# API: List historial pagos for authenticated user only
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def historial_pagos_list(request):
-	pagos = HistorialPagos.objects.all().order_by('-transacciones_data')
+	# Get user profile to access user_id
+	try:
+		user_profile = UserProfile.objects.get(django_user=request.user)
+		user_id = str(user_profile.user_id)
+	except UserProfile.DoesNotExist:
+		return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+	
+	# Filter pagos by user_id
+	pagos = HistorialPagos.objects.filter(user_id=user_id).order_by('-transacciones_data')
 	serializer = HistorialPagosSerializer(pagos, many=True)
 	return Response(serializer.data)
 
@@ -16,7 +24,18 @@ def historial_pagos_list(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def historial_pagos_create(request):
-	serializer = HistorialPagosSerializer(data=request.data)
+	# Get user profile to access user_id
+	try:
+		user_profile = UserProfile.objects.get(django_user=request.user)
+		user_id = str(user_profile.user_id)
+	except UserProfile.DoesNotExist:
+		return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+	
+	# Add user_id to request data
+	data = request.data.copy()
+	data['user_id'] = user_id
+	
+	serializer = HistorialPagosSerializer(data=data)
 	if serializer.is_valid():
 		serializer.save()
 		return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -46,15 +65,35 @@ from .serializers import UserRegisterSerializer, CountrySerializer, TransactionS
 from .models import Transaction
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def transactions_list(request):
-	transactions = Transaction.objects.all().order_by('-created_at')
+	# Get user profile to access user_id
+	try:
+		user_profile = UserProfile.objects.get(django_user=request.user)
+		user_id = str(user_profile.user_id)
+	except UserProfile.DoesNotExist:
+		return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+	
+	# Filter transactions by user_id
+	transactions = Transaction.objects.filter(user_id=user_id).order_by('-created_at')
 	serializer = TransactionSerializer(transactions, many=True)
 	return Response(serializer.data)
 
 @api_view(["POST"])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def transaction_create(request):
-	serializer = TransactionSerializer(data=request.data)
+	# Get user profile to access user_id
+	try:
+		user_profile = UserProfile.objects.get(django_user=request.user)
+		user_id = str(user_profile.user_id)
+	except UserProfile.DoesNotExist:
+		return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+	
+	# Add user_id to request data
+	data = request.data.copy()
+	data['user_id'] = user_id
+	
+	serializer = TransactionSerializer(data=data)
 	if serializer.is_valid():
 		serializer.save()
 		return Response(serializer.data, status=status.HTTP_201_CREATED)
