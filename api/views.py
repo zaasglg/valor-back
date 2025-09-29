@@ -225,9 +225,59 @@ def get_user_info(request):
 			'stage': user.stage,
 			'stage_balance': user.stage_balance,
 			'verification_start_date': user.verification_start_date,
-			'chicken_trap_coefficient': user.chicken_trap_coefficient
+			'chicken_trap_coefficient': user.chicken_trap_coefficient,
+			'first_bonus_used': user.first_bonus_used
 		}
 		return Response(data)
 	except UserProfile.DoesNotExist:
 		print(f"UserProfile not found for user: {request.user.id}")
 		return Response({"error": "User not found.", "debug": {"user_id": request.user.id}}, status=status.HTTP_404_NOT_FOUND)
+
+# API: Use first bonus
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def use_first_bonus(request):
+	"""
+	API endpoint для использования первого бонуса пользователем.
+	Пользователь может использовать первый бонус только один раз.
+	"""
+	try:
+		user_profile = UserProfile.objects.get(django_user=request.user)
+		
+		# Проверяем, не использовал ли пользователь уже первый бонус
+		if user_profile.first_bonus_used:
+			return Response({
+				"error": "First bonus already used",
+				"message": "You have already used your first bonus"
+			}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Получаем сумму бонуса из запроса
+		bonus_amount = request.data.get('bonus_amount', 0)
+		if not bonus_amount or bonus_amount <= 0:
+			return Response({
+				"error": "Invalid bonus amount",
+				"message": "Bonus amount must be greater than 0"
+			}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Добавляем бонус к текущим бонусам пользователя
+		user_profile.bonificaciones += bonus_amount
+		user_profile.first_bonus_used = True
+		user_profile.save()
+		
+		return Response({
+			"success": True,
+			"message": "First bonus applied successfully",
+			"bonus_amount": str(bonus_amount),
+			"total_bonuses": str(user_profile.bonificaciones),
+			"first_bonus_used": user_profile.first_bonus_used
+		}, status=status.HTTP_200_OK)
+		
+	except UserProfile.DoesNotExist:
+		return Response({
+			"error": "User profile not found"
+		}, status=status.HTTP_404_NOT_FOUND)
+	except Exception as e:
+		return Response({
+			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

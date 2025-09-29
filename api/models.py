@@ -27,6 +27,7 @@ class UserProfile(models.Model):
 	stage_balance = models.DecimalField(max_digits=19, decimal_places=2, default=120.00)
 	verification_start_date = models.DateTimeField(blank=True, null=True)
 	chicken_trap_coefficient = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+	first_bonus_used = models.BooleanField(default=False, help_text="Indica si el usuario ya utilizó su primer bono")
 
 
 	def save(self, *args, **kwargs):
