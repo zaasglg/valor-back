@@ -37,13 +37,13 @@ def historial_pagos_create(request):
 		return Response({"error": "Withdrawal amount is required."}, status=status.HTTP_400_BAD_REQUEST)
 	
 	try:
-		withdrawal_amount = float(withdrawal_amount)
+		from decimal import Decimal
+		withdrawal_amount = Decimal(str(withdrawal_amount))
 		if withdrawal_amount <= 0:
 			return Response({"error": "Withdrawal amount must be greater than 0."}, status=status.HTTP_400_BAD_REQUEST)
-	except (ValueError, TypeError):
+	except (ValueError, TypeError, decimal.InvalidOperation):
 		return Response({"error": "Invalid withdrawal amount format."}, status=status.HTTP_400_BAD_REQUEST)
 	
-	# Check if user has sufficient balance
 	if user_profile.deposit < withdrawal_amount:
 		return Response({
 			"error": "Insufficient balance",
