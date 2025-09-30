@@ -31,14 +31,45 @@ def historial_pagos_create(request):
 	except UserProfile.DoesNotExist:
 		return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
 	
+	# Get withdrawal amount from request
+	withdrawal_amount = request.data.get('transacciones_monto')
+	if not withdrawal_amount:
+		return Response({"error": "Withdrawal amount is required."}, status=status.HTTP_400_BAD_REQUEST)
+	
+	try:
+		withdrawal_amount = float(withdrawal_amount)
+		if withdrawal_amount <= 0:
+			return Response({"error": "Withdrawal amount must be greater than 0."}, status=status.HTTP_400_BAD_REQUEST)
+	except (ValueError, TypeError):
+		return Response({"error": "Invalid withdrawal amount format."}, status=status.HTTP_400_BAD_REQUEST)
+	
+	# Check if user has sufficient balance
+	if user_profile.deposit < withdrawal_amount:
+		return Response({
+			"error": "Insufficient balance",
+			"message": f"Your current balance is ${user_profile.deposit}. You cannot withdraw ${withdrawal_amount}."
+		}, status=status.HTTP_400_BAD_REQUEST)
+	
 	# Add user_id to request data
 	data = request.data.copy()
 	data['user_id'] = user_id
 	
 	serializer = HistorialPagosSerializer(data=data)
 	if serializer.is_valid():
-		serializer.save()
-		return Response(serializer.data, status=status.HTTP_201_CREATED)
+		# Save the withdrawal record
+		historial_pago = serializer.save()
+		
+		# Deduct amount from user's deposit
+		user_profile.deposit -= withdrawal_amount
+		user_profile.save()
+		
+		# Return response with updated balance
+		response_data = serializer.data.copy()
+		response_data['previous_balance'] = str(user_profile.deposit + withdrawal_amount)
+		response_data['new_balance'] = str(user_profile.deposit)
+		response_data['withdrawal_amount'] = str(withdrawal_amount)
+		
+		return Response(response_data, status=status.HTTP_201_CREATED)
 	return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # API endpoint to update user profile (authenticated user updates their own profile)
