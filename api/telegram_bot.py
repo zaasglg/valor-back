@@ -101,18 +101,36 @@ Responde con + para aprobar o - para rechazar"""
     def process_approval_response(self, message_id, response_text, user_id):
         """Обрабатывает ответ на одобрение/отклонение платежа"""
         try:
+            print(f"🔍 Looking for transaction with message_id: {message_id}")
+            
             # Находим транзакцию по message_id
             transaction = Transaction.objects.filter(message_id=str(message_id)).first()
             
             if not transaction:
-                return False
+                print(f"❌ Transaction not found for message_id: {message_id}")
+                
+                # Попробуем найти последнюю транзакцию в статусе 'esperando'
+                transaction = Transaction.objects.filter(estado='esperando').order_by('-created_at').first()
+                if transaction:
+                    print(f"🔄 Found pending transaction: {transaction.transaccion_number}")
+                    # Обновляем message_id для этой транзакции
+                    transaction.message_id = str(message_id)
+                    transaction.save()
+                else:
+                    print(f"❌ No pending transactions found")
+                    return False
+            
+            print(f"✅ Found transaction: {transaction.transaccion_number}, status: {transaction.estado}")
             
             # Проверяем, что транзакция еще не обработана
             if transaction.estado != 'esperando':
+                print(f"❌ Transaction already processed: {transaction.estado}")
                 return False
             
             # Обрабатываем ответ
             if response_text.strip() == '+':
+                print(f"✅ Approving transaction: {transaction.transaccion_number}")
+                
                 # Одобряем платеж
                 transaction.estado = 'aprobado'
                 transaction.processed_at = datetime.now()
@@ -122,14 +140,21 @@ Responde con + para aprobar o - para rechazar"""
                 # Пополняем счет пользователя
                 user_profile = UserProfile.objects.filter(user_id=transaction.user_id).first()
                 if user_profile:
+                    old_balance = user_profile.deposit
                     user_profile.deposit += transaction.transacciones_monto
                     user_profile.save()
+                    print(f"💰 Balance updated: {old_balance} -> {user_profile.deposit}")
+                else:
+                    print(f"❌ User profile not found for user_id: {transaction.user_id}")
                 
                 # Отправляем подтверждение
                 self.send_confirmation_message(transaction, 'approved')
+                print(f"📱 Confirmation message sent")
                 return True
                 
             elif response_text.strip() == '-':
+                print(f"❌ Rejecting transaction: {transaction.transaccion_number}")
+                
                 # Отклоняем платеж
                 transaction.estado = 'rechazado'
                 transaction.processed_at = datetime.now()
@@ -138,12 +163,16 @@ Responde con + para aprobar o - para rechazar"""
                 
                 # Отправляем подтверждение
                 self.send_confirmation_message(transaction, 'rejected')
+                print(f"📱 Rejection message sent")
                 return True
             
+            print(f"❌ Invalid response text: '{response_text}'")
             return False
             
         except Exception as e:
-            print(f"Error processing approval response: {e}")
+            print(f"❌ Error processing approval response: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def send_confirmation_message(self, transaction, status):

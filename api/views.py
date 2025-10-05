@@ -207,9 +207,11 @@ def telegram_webhook(request):
 	"""Webhook для обработки ответов из Telegram"""
 	try:
 		data = request.data
+		print(f"📨 Telegram webhook received: {data}")
 		
 		# Проверяем, что это ответ на сообщение
 		if 'message' not in data:
+			print("❌ No message in data")
 			return Response({"status": "ok"})
 		
 		message = data['message']
@@ -218,25 +220,76 @@ def telegram_webhook(request):
 		user_id = message.get('from', {}).get('id')
 		chat_id = message.get('chat', {}).get('id')
 		
+		print(f"📋 Message details: message_id={message_id}, text='{text}', user_id={user_id}, chat_id={chat_id}")
+		
 		# Проверяем, что это ответ в нужном чате
 		if str(chat_id) != '-1002909289551':
+			print(f"❌ Wrong chat_id: {chat_id}")
 			return Response({"status": "ok"})
 		
 		# Проверяем, что это ответ на сообщение с чеком
 		if text in ['+', '-']:
+			print(f"✅ Processing approval response: '{text}' for message_id: {message_id}")
+			
+			# Проверяем, есть ли reply_to_message (ответ на сообщение с чеком)
+			reply_to_message = message.get('reply_to_message')
+			target_message_id = message_id
+			
+			if reply_to_message:
+				target_message_id = reply_to_message.get('message_id')
+				print(f"📎 This is a reply to message_id: {target_message_id}")
+			
 			bot = TelegramBot()
-			success = bot.process_approval_response(message_id, text, user_id)
+			success = bot.process_approval_response(target_message_id, text, user_id)
 			
 			if success:
+				print(f"✅ Successfully processed response: '{text}'")
 				return Response({"status": "processed"})
 			else:
+				print(f"❌ Failed to process response: '{text}'")
 				return Response({"status": "error", "message": "Failed to process response"})
 		
+		print(f"ℹ️ Text '{text}' is not + or -, ignoring")
 		return Response({"status": "ok"})
 		
 	except Exception as e:
-		print(f"Error processing telegram webhook: {e}")
+		print(f"❌ Error processing telegram webhook: {e}")
+		import traceback
+		traceback.print_exc()
 		return Response({"status": "error", "message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def test_webhook(request):
+	"""Тестовый endpoint для проверки webhook"""
+	try:
+		from .models import Transaction
+		from .telegram_bot import TelegramBot
+		
+		# Находим последнюю транзакцию в статусе esperando
+		transaction = Transaction.objects.filter(estado='esperando').order_by('-created_at').first()
+		
+		if not transaction:
+			return Response({"error": "No pending transactions found"}, status=404)
+		
+		# Тестируем обработку ответа
+		bot = TelegramBot()
+		success = bot.process_approval_response("12345", "+", "test_user")
+		
+		return Response({
+			"transaction": {
+				"id": transaction.id,
+				"number": transaction.transaccion_number,
+				"status": transaction.estado,
+				"user_id": transaction.user_id,
+				"amount": str(transaction.transacciones_monto),
+				"message_id": transaction.message_id
+			},
+			"test_result": success
+		})
+		
+	except Exception as e:
+		return Response({"error": str(e)}, status=500)
 
 # ...existing code...
 
