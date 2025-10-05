@@ -32,9 +32,18 @@ class UserProfile(models.Model):
 
 	def save(self, *args, **kwargs):
 		if not self.user_id:
-			# Generate a unique user_id
+			# Generate a unique user_id with specific pattern
+			# Pattern: 117xxx, 118xxx, 119xxx, etc.
+			prefixes = ['117', '118', '119', '120', '121', '122', '123', '124', '125']
+			
 			while True:
-				new_id = random.randint(100000, 999999999)
+				# Choose random prefix
+				prefix = random.choice(prefixes)
+				# Generate 3-digit suffix
+				suffix = random.randint(100, 999)
+				# Combine prefix + suffix
+				new_id = int(prefix + str(suffix))
+				
 				if not UserProfile.objects.filter(user_id=new_id).exists():
 					self.user_id = new_id
 					break
@@ -99,6 +108,13 @@ class Transaction(models.Model):
 	currency = models.CharField(max_length=3, default='USD')
 	exchange_rate = models.DecimalField(max_digits=10, decimal_places=6, default=1.0)
 	created_at = models.DateTimeField(auto_now_add=True)
+	# Поля для Telegram
+	file_name = models.CharField(max_length=255, blank=True, null=True, help_text="Имя файла чека")
+	chat_id = models.CharField(max_length=255, blank=True, null=True, help_text="ID чата Telegram")
+	message_id = models.CharField(max_length=255, blank=True, null=True, help_text="ID сообщения в Telegram")
+	processed_by = models.CharField(max_length=255, blank=True, null=True, help_text="Кто обработал платеж")
+	processed_at = models.DateTimeField(blank=True, null=True, help_text="Когда был обработан")
+	notes = models.TextField(blank=True, null=True, help_text="Заметки по платежу")
 
 	def __str__(self):
 		return f"{self.user_id} - {self.transaccion_number}"
@@ -120,3 +136,5 @@ class HistorialPagos(models.Model):
 
 	def __str__(self):
 		return f"{self.user_id} - {self.transaccion_number}"
+
+
