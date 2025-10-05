@@ -101,21 +101,25 @@ Responde con + para aprobar o - para rechazar"""
     def process_approval_response(self, message_id, response_text, user_id):
         """Обрабатывает ответ на одобрение/отклонение платежа"""
         try:
-            print(f"🔍 Looking for transaction with message_id: {message_id}")
+            transaction = None
             
-            # Находим транзакцию по message_id
-            transaction = Transaction.objects.filter(message_id=str(message_id)).first()
+            # Если есть message_id, пытаемся найти транзакцию по нему
+            if message_id:
+                print(f"🔍 Looking for transaction with message_id: {message_id}")
+                transaction = Transaction.objects.filter(message_id=str(message_id)).first()
             
+            # Если не нашли по message_id или message_id не был передан, ищем последнюю ожидающую
             if not transaction:
-                print(f"❌ Transaction not found for message_id: {message_id}")
+                if message_id:
+                    print(f"❌ Transaction not found for message_id: {message_id}")
+                else:
+                    print(f"⚠️ No message_id provided, searching for latest pending transaction")
                 
                 # Попробуем найти последнюю транзакцию в статусе 'esperando'
                 transaction = Transaction.objects.filter(estado='esperando').order_by('-created_at').first()
                 if transaction:
                     print(f"🔄 Found pending transaction: {transaction.transaccion_number}")
-                    # Обновляем message_id для этой транзакции
-                    transaction.message_id = str(message_id)
-                    transaction.save()
+                    # НЕ обновляем message_id, так как это может быть не та транзакция
                 else:
                     print(f"❌ No pending transactions found")
                     return False
@@ -138,14 +142,69 @@ Responde con + para aprobar o - para rechazar"""
                 transaction.save()
                 
                 # Пополняем счет пользователя
-                user_profile = UserProfile.objects.filter(user_id=transaction.user_id).first()
+                print(f"🔍 Searching for user profile with user_id: {transaction.user_id} (type: {type(transaction.user_id)})")
+                
+                # Пробуем найти пользователя разными способами
+                user_profile = None
+                
+                # Попытка 1: поиск как строка
+                user_profile = UserProfile.objects.filter(user_id=str(transaction.user_id)).first()
                 if user_profile:
-                    old_balance = user_profile.deposit
-                    user_profile.deposit += transaction.transacciones_monto
-                    user_profile.save()
-                    print(f"💰 Balance updated: {old_balance} -> {user_profile.deposit}")
+                    print(f"✅ User found by string user_id")
+                else:
+                    # Попытка 2: поиск как число
+                    try:
+                        user_profile = UserProfile.objects.filter(user_id=int(transaction.user_id)).first()
+                        if user_profile:
+                            print(f"✅ User found by integer user_id")
+                    except (ValueError, TypeError):
+                        pass
+                
+                if user_profile:
+                    old_deposit = user_profile.deposit
+                    old_bonificaciones = user_profile.bonificaciones
+                    old_first_bonus_used = user_profile.first_bonus_used
+                    
+                    print(f"👤 User info: {user_profile.nombre} {user_profile.apellido} (email: {user_profile.email})")
+                    print(f"💰 Current deposit: {old_deposit}")
+                    print(f"💵 Amount to add: {transaction.transacciones_monto}")
+                    print(f"🎁 First bonus used: {old_first_bonus_used}")
+                    
+                    # Пополняем основной баланс (deposit)
+                    from decimal import Decimal
+                    user_profile.deposit = Decimal(str(user_profile.deposit)) + Decimal(str(transaction.transacciones_monto))
+                    
+                    # Проверяем, это ли первое пополнение пользователя
+                    if not user_profile.first_bonus_used:
+                        # Считаем одобренные транзакции этого пользователя (включая текущую)
+                        approved_count = Transaction.objects.filter(
+                            user_id=str(transaction.user_id),
+                            estado='aprobado'
+                        ).count()
+                        
+                        print(f"📊 Total approved transactions for this user: {approved_count}")
+                        
+                        # Если это первая одобренная транзакция, устанавливаем флаг
+                        if approved_count == 1:
+                            user_profile.first_bonus_used = True
+                            print(f"🎉 This is the first deposit! Setting first_bonus_used = True")
+                    
+                    # Сохраняем изменения
+                    try:
+                        user_profile.save()
+                        print(f"✅ Balance updated successfully!")
+                        print(f"   Deposit: {old_deposit} -> {user_profile.deposit} (+{transaction.transacciones_monto})")
+                        print(f"   Bonificaciones: {old_bonificaciones} -> {user_profile.bonificaciones}")
+                        print(f"   First bonus used: {old_first_bonus_used} -> {user_profile.first_bonus_used}")
+                    except Exception as save_error:
+                        print(f"❌ Error saving user profile: {save_error}")
+                        import traceback
+                        traceback.print_exc()
+                        return False
                 else:
                     print(f"❌ User profile not found for user_id: {transaction.user_id}")
+                    print(f"   Available users: {list(UserProfile.objects.values_list('user_id', flat=True)[:10])}")
+                    return False
                 
                 # Отправляем подтверждение
                 self.send_confirmation_message(transaction, 'approved')

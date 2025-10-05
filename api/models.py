@@ -32,17 +32,11 @@ class UserProfile(models.Model):
 
 	def save(self, *args, **kwargs):
 		if not self.user_id:
-			# Generate a unique user_id with specific pattern
-			# Pattern: 117xxx, 118xxx, 119xxx, etc.
-			prefixes = ['117', '118', '119', '120', '121', '122', '123', '124', '125']
-			
+			# Generate a unique user_id with 8 digits
+			# Pattern: 10000000-99999999 (8 digits)
 			while True:
-				# Choose random prefix
-				prefix = random.choice(prefixes)
-				# Generate 3-digit suffix
-				suffix = random.randint(100, 999)
-				# Combine prefix + suffix
-				new_id = int(prefix + str(suffix))
+				# Generate 8-digit number
+				new_id = random.randint(10000000, 99999999)
 				
 				if not UserProfile.objects.filter(user_id=new_id).exists():
 					self.user_id = new_id

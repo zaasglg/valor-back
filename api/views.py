@@ -233,11 +233,13 @@ def telegram_webhook(request):
 			
 			# Проверяем, есть ли reply_to_message (ответ на сообщение с чеком)
 			reply_to_message = message.get('reply_to_message')
-			target_message_id = message_id
+			target_message_id = None
 			
 			if reply_to_message:
 				target_message_id = reply_to_message.get('message_id')
 				print(f"📎 This is a reply to message_id: {target_message_id}")
+			else:
+				print(f"⚠️ No reply_to_message found, will search for latest pending transaction")
 			
 			bot = TelegramBot()
 			success = bot.process_approval_response(target_message_id, text, user_id)
