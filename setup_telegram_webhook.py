@@ -8,7 +8,7 @@ import os
 
 # Конфигурация бота
 BOT_TOKEN = '8468171708:AAFKFJtEGUb-RW2DdiMiU8hNZ_pkffVZSPI'
-WEBHOOK_URL = 'https://your-domain.com/api/telegram-webhook/'  # Замените на ваш домен
+WEBHOOK_URL = 'https://api.valor-games.co/api/telegram-webhook/'  # Замените на ваш домен
 
 def set_webhook():
     """Устанавливает webhook для Telegram бота"""
