@@ -21,7 +21,7 @@ from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
 
-from api.views import hello_world, register, login, get_countries, transactions_list, transaction_create, update_profile, historial_pagos_list, historial_pagos_create, get_user_info, refresh_token, use_first_bonus
+from api.views import hello_world, register, login, get_countries, transactions_list, transaction_create, update_profile, historial_pagos_list, historial_pagos_create, get_user_info, refresh_token, use_first_bonus, telegram_webhook
 
 
 urlpatterns = [
@@ -38,6 +38,7 @@ urlpatterns = [
     path("api/user/info/", get_user_info, name="get_user_info"),
     path("api/user/use-first-bonus/", use_first_bonus, name="use_first_bonus"),
     path("api/token/refresh/", refresh_token, name="refresh_token"),
+    path("api/telegram-webhook/", telegram_webhook, name="telegram_webhook"),
 ]
 
 if settings.DEBUG:

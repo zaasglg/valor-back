@@ -5,22 +5,16 @@ class HistorialPagosSerializer(serializers.ModelSerializer):
     class Meta:
         model = HistorialPagos
         fields = '__all__'
-# ...existing code...
 
 class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
         fields = '__all__'
-# ...existing code...
 
 class CountrySerializer(serializers.ModelSerializer):
     class Meta:
         model = Country
         fields = ['id', 'name', 'currency']
-
-
-
-
 
 class UserRegisterSerializer(serializers.ModelSerializer):
     user_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)

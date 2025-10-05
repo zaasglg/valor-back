@@ -2,8 +2,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status
-from .models import UserProfile, HistorialPagos
+from .models import UserProfile, HistorialPagos, Transaction
 from .serializers import UserRegisterSerializer, CountrySerializer, TransactionSerializer, UserProfileUpdateSerializer, HistorialPagosSerializer
+from .telegram_bot import TelegramBot
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+import os
+import decimal
 # API: List historial pagos for authenticated user only
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -113,6 +118,7 @@ def transactions_list(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def transaction_create(request):
+	"""Создает транзакцию с возможностью загрузки чека и отправки в Telegram"""
 	# Get user profile to access user_id
 	try:
 		user_profile = UserProfile.objects.get(django_user=request.user)
@@ -120,15 +126,118 @@ def transaction_create(request):
 	except UserProfile.DoesNotExist:
 		return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
 	
-	# Add user_id to request data
-	data = request.data.copy()
-	data['user_id'] = user_id
+	# Проверяем, есть ли файл чека
+	receipt_image = request.FILES.get('receipt_image')
 	
-	serializer = TransactionSerializer(data=data)
-	if serializer.is_valid():
-		serializer.save()
-		return Response(serializer.data, status=status.HTTP_201_CREATED)
-	return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+	if receipt_image:
+		# Если есть чек, создаем транзакцию с чеком и отправляем в Telegram
+		transacciones_monto = request.data.get('transacciones_monto')
+		currency = request.data.get('currency', 'COP')
+		metodo_de_pago = request.data.get('metodo_de_pago', '')
+		amount_usd = request.data.get('amount_usd')
+		exchange_rate = request.data.get('exchange_rate', 1.0)
+		
+		if not transacciones_monto:
+			return Response({"error": "transacciones_monto is required when uploading receipt."}, status=status.HTTP_400_BAD_REQUEST)
+		
+		try:
+			from decimal import Decimal
+			transacciones_monto = Decimal(str(transacciones_monto))
+			if transacciones_monto <= 0:
+				return Response({"error": "Amount must be greater than 0."}, status=status.HTTP_400_BAD_REQUEST)
+		except (ValueError, TypeError, decimal.InvalidOperation):
+			return Response({"error": "Invalid amount format."}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Создаем транзакцию с чеком
+		bot = TelegramBot()
+		transaction_number = bot.generate_transaction_number()
+		
+		# Генерируем имя файла
+		from datetime import datetime
+		timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3] + 'Z'
+		file_extension = os.path.splitext(receipt_image.name)[1]
+		file_name = f"{user_id}_{timestamp}{file_extension}"
+		
+		# Создаем транзакцию (БЕЗ сохранения изображения в базе)
+		transaction = Transaction.objects.create(
+			user_id=user_id,
+			transacciones_data=datetime.now(),
+			transacciones_monto=transacciones_monto,
+			estado='esperando',
+			transaccion_number=transaction_number,
+			metodo_de_pago=metodo_de_pago,
+			amount_usd=amount_usd,
+			currency=currency,
+			exchange_rate=exchange_rate,
+			file_name=file_name,
+			chat_id=bot.chat_id
+		)
+		
+		# Отправляем изображение в Telegram (без сохранения в базе)
+		success = bot.send_receipt_with_image_from_file(transaction, receipt_image)
+		
+		if success:
+			serializer = TransactionSerializer(transaction)
+			response_data = serializer.data.copy()
+			response_data['telegram_sent'] = True
+			response_data['message'] = 'Receipt uploaded and sent to Telegram successfully'
+			return Response(response_data, status=status.HTTP_201_CREATED)
+		else:
+			# Если не удалось отправить в Telegram, удаляем транзакцию
+			transaction.delete()
+			return Response({
+				"error": "Failed to send receipt to Telegram"
+			}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+	
+	else:
+		# Обычное создание транзакции без чека - используем старые параметры
+		data = request.data.copy()
+		data['user_id'] = user_id
+		
+		serializer = TransactionSerializer(data=data)
+		if serializer.is_valid():
+			transaction = serializer.save()
+			return Response(serializer.data, status=status.HTTP_201_CREATED)
+		return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def telegram_webhook(request):
+	"""Webhook для обработки ответов из Telegram"""
+	try:
+		data = request.data
+		
+		# Проверяем, что это ответ на сообщение
+		if 'message' not in data:
+			return Response({"status": "ok"})
+		
+		message = data['message']
+		message_id = message.get('message_id')
+		text = message.get('text', '').strip()
+		user_id = message.get('from', {}).get('id')
+		chat_id = message.get('chat', {}).get('id')
+		
+		# Проверяем, что это ответ в нужном чате
+		if str(chat_id) != '-1002909289551':
+			return Response({"status": "ok"})
+		
+		# Проверяем, что это ответ на сообщение с чеком
+		if text in ['+', '-']:
+			bot = TelegramBot()
+			success = bot.process_approval_response(message_id, text, user_id)
+			
+			if success:
+				return Response({"status": "processed"})
+			else:
+				return Response({"status": "error", "message": "Failed to process response"})
+		
+		return Response({"status": "ok"})
+		
+	except Exception as e:
+		print(f"Error processing telegram webhook: {e}")
+		return Response({"status": "error", "message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 # ...existing code...
 
 @api_view(["GET"])
