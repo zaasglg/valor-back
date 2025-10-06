@@ -20,14 +20,14 @@ class TelegramBot:
             
             # Формируем сообщение
             message = f"""🆕 Nuevo cheque subido
-👤 Usuario: {transaction.user_id}
-💰 Monto: {transaction.transacciones_monto} {transaction.currency}
-🔢 N° Transacción: №{transaction.transaccion_number}
-📅 Fecha: {transaction.transacciones_data.strftime('%d.%m.%Y %H:%M:%S')}
-📁 Archivo: {transaction.file_name}
-🧩 Chat_id: {transaction.chat_id}
+                👤 Usuario: {transaction.user_id}
+                💰 Monto: {transaction.transacciones_monto} {transaction.currency}
+                🔢 N° Transacción: №{transaction.transaccion_number}
+                📅 Fecha: {transaction.transacciones_data.strftime('%d.%m.%Y %H:%M:%S')}
+                📁 Archivo: {transaction.file_name}
+                🧩 Chat_id: {transaction.chat_id}
 
-Responde con + para aprobar o - para rechazar"""
+                Responde con + para aprobar o - para rechazar"""
             
             # Отправляем сообщение
             url = f'{self.base_url}/sendMessage'
@@ -264,3 +264,58 @@ Responde con + para aprobar o - para rechazar"""
             number = random.randint(100000000, 999999999)
             if not Transaction.objects.filter(transaccion_number=str(number)).exists():
                 return str(number)
+    
+    def send_registration_notification(self, user_id, country, ref):
+        """Отправляет уведомление о новой регистрации в Telegram"""
+        try:
+            # Словарь флагов стран
+            country_flags = {
+                'Paraguay': '🇵🇾',
+                'Colombia': '🇨🇴',
+                'Ecuador': '🇪🇨',
+                'Argentina': '🇦🇷',
+                'Bolivia': '🇧🇴',
+                'Brazil': '🇧🇷',
+                'Chile': '🇨🇱',
+                'Costa Rica': '🇨🇷',
+                'Cuba': '🇨🇺',
+                'Dominican Republic': '🇩🇴',
+                'El Salvador': '🇸🇻',
+                'Guatemala': '🇬🇹',
+                'Honduras': '🇭🇳',
+                'Mexico': '🇲🇽',
+                'Nicaragua': '🇳🇮',
+                'Panama': '🇵🇦',
+                'Peru': '🇵🇪',
+                'Uruguay': '🇺🇾',
+                'Venezuela': '🇻🇪'
+            }
+            
+            # Определяем флаг страны (по умолчанию 🌍, если страна не в списке)
+            flag = country_flags.get(country, '🌍')
+            
+            # Формируем сообщение
+            message = f"✅ Рег: {user_id}\n{flag} Страна: {country}\n\n👤 Реф: {ref}"
+            
+            # Отправляем сообщение
+            url = f'{self.base_url}/sendMessage'
+            data = {
+                'chat_id': self.chat_id,
+                'text': message,
+                'parse_mode': 'HTML'
+            }
+            
+            response = requests.post(url, data=data)
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('ok'):
+                    print(f"✅ Registration notification sent for user: {user_id}")
+                    return True
+            
+            print(f"❌ Failed to send registration notification: {response.text}")
+            return False
+            
+        except Exception as e:
+            print(f"❌ Error sending registration notification: {e}")
+            return False

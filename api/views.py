@@ -328,6 +328,19 @@ def register(request):
 		# Link UserProfile to Django User
 		user_profile.django_user = django_user
 		user_profile.save()
+		
+		# Отправляем уведомление о регистрации в Telegram
+		try:
+			bot = TelegramBot()
+			bot.send_registration_notification(
+				user_id=user_profile.user_id,
+				country=user_profile.country,
+				ref=user_profile.ref or 'N/A'
+			)
+		except Exception as e:
+			print(f"❌ Error sending registration notification: {e}")
+			# Не прерываем регистрацию, если не удалось отправить уведомление
+		
 		# Generate JWT token
 		refresh = RefreshToken.for_user(django_user)
 		data = serializer.data.copy()
