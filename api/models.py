@@ -32,11 +32,15 @@ class UserProfile(models.Model):
 
 	def save(self, *args, **kwargs):
 		if not self.user_id:
-			# Generate user_id exactly like PHP code
+			# Generate user_id starting from 11000000
 			# Get the maximum user_id from database
 			from django.db import models
 			max_user = UserProfile.objects.aggregate(max_id=models.Max('user_id'))
-			last_id = max_user['max_id'] if max_user['max_id'] else 0
+			last_id = max_user['max_id'] if max_user['max_id'] else 11000000
+			
+			# If no users exist, start from 11000000
+			if last_id < 11000000:
+				last_id = 11000000
 			
 			# Generate random number from 2 to 20 (like PHP)
 			random_number = random.randint(2, 20)
