@@ -32,15 +32,24 @@ class UserProfile(models.Model):
 
 	def save(self, *args, **kwargs):
 		if not self.user_id:
-			# Generate a unique user_id with 8 digits
-			# Pattern: 10000000-99999999 (8 digits)
-			while True:
-				# Generate 8-digit number
-				new_id = random.randint(10000000, 99999999)
-				
-				if not UserProfile.objects.filter(user_id=new_id).exists():
-					self.user_id = new_id
-					break
+			# Generate user_id exactly like PHP code
+			# Get the maximum user_id from database
+			from django.db import models
+			max_user = UserProfile.objects.aggregate(max_id=models.Max('user_id'))
+			last_id = max_user['max_id'] if max_user['max_id'] else 0
+			
+			# Generate random number from 2 to 20 (like PHP)
+			random_number = random.randint(2, 20)
+			
+			# New ID = last_id + random_number
+			new_id = last_id + random_number
+			
+			# Check if this ID already exists, if yes, try again
+			while UserProfile.objects.filter(user_id=new_id).exists():
+				random_number = random.randint(2, 20)
+				new_id = last_id + random_number
+			
+			self.user_id = new_id
 		super().save(*args, **kwargs)
 
 	def __str__(self):
