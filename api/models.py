@@ -32,28 +32,17 @@ class UserProfile(models.Model):
 
 	def save(self, *args, **kwargs):
 		if not self.user_id:
-			# Generate user_id starting from 11000000
-			# Get the maximum user_id from database
-			from django.db import models
-			max_user = UserProfile.objects.aggregate(max_id=models.Max('user_id'))
-			last_id = max_user['max_id'] if max_user['max_id'] else 11000000
+			# Generate sequential user_id starting from 17958522
+			# Get the maximum user_id and add 1
+			max_user = UserProfile.objects.aggregate(models.Max('user_id'))
+			max_id = max_user['user_id__max']
 			
-			# If no users exist, start from 11000000
-			if last_id < 11000000:
-				last_id = 11000000
-			
-			# Generate random number from 2 to 20 (like PHP)
-			random_number = random.randint(2, 20)
-			
-			# New ID = last_id + random_number
-			new_id = last_id + random_number
-			
-			# Check if this ID already exists, if yes, try again
-			while UserProfile.objects.filter(user_id=new_id).exists():
-				random_number = random.randint(2, 20)
-				new_id = last_id + random_number
-			
-			self.user_id = new_id
+			if max_id is None or max_id < 17958522:
+				# If no users exist or max_id is less than starting value, start from 17958522
+				self.user_id = 17958522
+			else:
+				# Otherwise, increment by 1
+				self.user_id = max_id + 1
 		super().save(*args, **kwargs)
 
 	def __str__(self):
