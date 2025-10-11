@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status
 from .models import UserProfile, HistorialPagos, Transaction
-from .serializers import UserRegisterSerializer, CountrySerializer, TransactionSerializer, UserProfileUpdateSerializer, HistorialPagosSerializer
+from .serializers import UserRegisterSerializer, CountrySerializer, TransactionSerializer, UserProfileUpdateSerializer, HistorialPagosSerializer, DepositUpdateSerializer
 from .telegram_bot import TelegramBot
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
@@ -480,6 +480,54 @@ def use_first_bonus(request):
 			"first_bonus_used": user_profile.first_bonus_used
 		}, status=status.HTTP_200_OK)
 		
+	except UserProfile.DoesNotExist:
+		return Response({
+			"error": "User profile not found"
+		}, status=status.HTTP_404_NOT_FOUND)
+	except Exception as e:
+		return Response({
+			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# API: Update user deposit
+@api_view(["PUT", "PATCH"])
+@permission_classes([IsAuthenticated])
+def update_deposit(request):
+	"""
+	API endpoint для изменения deposit пользователя.
+	Поддерживает как PUT (полная замена), так и PATCH (частичное обновление).
+	"""
+	try:
+		user_profile = UserProfile.objects.get(django_user=request.user)
+		
+		# Используем сериализатор для валидации данных
+		serializer = DepositUpdateSerializer(user_profile, data=request.data, partial=request.method == 'PATCH')
+		
+		if serializer.is_valid():
+			# Сохраняем старое значение для логирования
+			old_deposit = user_profile.deposit
+			
+			# Обновляем deposit
+			serializer.save()
+			
+			# Получаем обновленный объект
+			user_profile.refresh_from_db()
+			
+			return Response({
+				"success": True,
+				"message": "Deposit updated successfully",
+				"old_deposit": str(old_deposit),
+				"new_deposit": str(user_profile.deposit),
+				"user_id": user_profile.user_id
+			}, status=status.HTTP_200_OK)
+		else:
+			return Response({
+				"error": "Validation error",
+				"details": serializer.errors
+			}, status=status.HTTP_400_BAD_REQUEST)
+			
 	except UserProfile.DoesNotExist:
 		return Response({
 			"error": "User profile not found"

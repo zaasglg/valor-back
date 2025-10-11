@@ -62,3 +62,16 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
             instance.password = make_password(password)
             validated_data.pop('password')
         return super().update(instance, validated_data)
+
+
+# Serializer specifically for updating deposit field
+class DepositUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = ['deposit']
+    
+    def validate_deposit(self, value):
+        # Ensure deposit is not negative
+        if value < 0:
+            raise serializers.ValidationError("Deposit cannot be negative")
+        return value
