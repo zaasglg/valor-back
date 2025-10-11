@@ -21,7 +21,7 @@ from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
 
-from api.views import hello_world, register, login, get_countries, transactions_list, transaction_create, update_profile, historial_pagos_list, historial_pagos_create, get_user_info, refresh_token, use_first_bonus, telegram_webhook, test_webhook
+from api.views import hello_world, register, login, get_countries, transactions_list, transaction_create, update_profile, historial_pagos_list, historial_pagos_create, get_user_info, refresh_token, use_first_bonus, telegram_webhook, test_webhook, update_deposit
 
 
 urlpatterns = [
@@ -37,6 +37,7 @@ urlpatterns = [
     path("api/historial_pagos/create/", historial_pagos_create, name="historial_pagos_create"),
     path("api/user/info/", get_user_info, name="get_user_info"),
     path("api/user/use-first-bonus/", use_first_bonus, name="use_first_bonus"),
+    path("api/user/deposit/", update_deposit, name="update_deposit"),
     path("api/token/refresh/", refresh_token, name="refresh_token"),
     path("api/telegram-webhook/", telegram_webhook, name="telegram_webhook"),
     path("api/test-webhook/", test_webhook, name="test_webhook"),
