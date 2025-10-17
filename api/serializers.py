@@ -75,3 +75,27 @@ class DepositUpdateSerializer(serializers.ModelSerializer):
         if value < 0:
             raise serializers.ValidationError("Deposit cannot be negative")
         return value
+
+
+# Serializer for user lookup by user_id (read-only)
+class UserLookupSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = [
+            'user_id', 'email', 'deposit', 'country', 'ref', 
+            'nombre', 'apellido', 'cumpleanos', 'sexo', 'ciudad', 
+            'direccion', 'numero_de_telefono', 'bonificaciones', 
+            'registration_date', 'status', 'positions_mine', 
+            'col_deposit', 'user_status', 'stage', 'stage_balance', 
+            'verification_start_date', 'chicken_trap_coefficient', 
+            'first_bonus_used'
+        ]
+        read_only_fields = [
+            'user_id', 'email', 'deposit', 'country', 'ref', 
+            'nombre', 'apellido', 'cumpleanos', 'sexo', 'ciudad', 
+            'direccion', 'numero_de_telefono', 'bonificaciones', 
+            'registration_date', 'status', 'positions_mine', 
+            'col_deposit', 'user_status', 'stage', 'stage_balance', 
+            'verification_start_date', 'chicken_trap_coefficient', 
+            'first_bonus_used'
+        ]

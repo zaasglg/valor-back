@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework import status
 from .models import UserProfile, HistorialPagos, Transaction
-from .serializers import UserRegisterSerializer, CountrySerializer, TransactionSerializer, UserProfileUpdateSerializer, HistorialPagosSerializer, DepositUpdateSerializer
+from .serializers import UserRegisterSerializer, CountrySerializer, TransactionSerializer, UserProfileUpdateSerializer, HistorialPagosSerializer, DepositUpdateSerializer, UserLookupSerializer
 from .telegram_bot import TelegramBot
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
@@ -491,6 +491,54 @@ def use_first_bonus(request):
 		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+# API: Lookup user by user_id
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def lookup_user_by_id(request, user_id):
+	"""
+	API endpoint для поиска пользователя по user_id.
+	Возвращает данные пользователя если найден, иначе null.
+	"""
+	try:
+		# Преобразуем user_id в BigInteger для поиска
+		user_id_int = int(user_id)
+		
+		# Ищем пользователя по user_id
+		user_profile = UserProfile.objects.get(user_id=user_id_int)
+		
+		# Сериализуем данные пользователя
+		serializer = UserLookupSerializer(user_profile)
+		
+		return Response({
+			"success": True,
+			"user": serializer.data
+		}, status=status.HTTP_200_OK)
+		
+	except ValueError:
+		# Неверный формат user_id
+		return Response({
+			"success": False,
+			"user": None,
+			"error": "Invalid user_id format. Must be a number."
+		}, status=status.HTTP_400_BAD_REQUEST)
+		
+	except UserProfile.DoesNotExist:
+		# Пользователь не найден
+		return Response({
+			"success": False,
+			"user": None,
+			"message": "User not found"
+		}, status=status.HTTP_200_OK)  # Возвращаем 200 с null, как запрошено
+		
+	except Exception as e:
+		return Response({
+			"success": False,
+			"user": None,
+			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # API: Update user deposit
 @api_view(["PUT", "PATCH"])
 @permission_classes([IsAuthenticated])
@@ -534,6 +582,54 @@ def update_deposit(request):
 		}, status=status.HTTP_404_NOT_FOUND)
 	except Exception as e:
 		return Response({
+			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# API: Lookup user by user_id
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def lookup_user_by_id(request, user_id):
+	"""
+	API endpoint для поиска пользователя по user_id.
+	Возвращает данные пользователя если найден, иначе null.
+	"""
+	try:
+		# Преобразуем user_id в BigInteger для поиска
+		user_id_int = int(user_id)
+		
+		# Ищем пользователя по user_id
+		user_profile = UserProfile.objects.get(user_id=user_id_int)
+		
+		# Сериализуем данные пользователя
+		serializer = UserLookupSerializer(user_profile)
+		
+		return Response({
+			"success": True,
+			"user": serializer.data
+		}, status=status.HTTP_200_OK)
+		
+	except ValueError:
+		# Неверный формат user_id
+		return Response({
+			"success": False,
+			"user": None,
+			"error": "Invalid user_id format. Must be a number."
+		}, status=status.HTTP_400_BAD_REQUEST)
+		
+	except UserProfile.DoesNotExist:
+		# Пользователь не найден
+		return Response({
+			"success": False,
+			"user": None,
+			"message": "User not found"
+		}, status=status.HTTP_200_OK)  # Возвращаем 200 с null, как запрошено
+		
+	except Exception as e:
+		return Response({
+			"success": False,
+			"user": None,
 			"error": "Internal server error",
 			"message": str(e)
 		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
