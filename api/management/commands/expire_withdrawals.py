@@ -14,7 +14,8 @@ class Command(BaseCommand):
 
         try:
             while True:
-                cutoff = timezone.now() - timedelta(minutes=1)
+                # Expire withdrawal requests older than 20 minutes
+                cutoff = timezone.now() - timedelta(minutes=20)
                 pending = HistorialPagos.objects.filter(estado='esperando', transacciones_data__lte=cutoff)
                 count = pending.count()
                 if count:
