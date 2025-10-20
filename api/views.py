@@ -349,6 +349,67 @@ def register(request):
 		return Response(data, status=status.HTTP_201_CREATED)
 	return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def change_stage(request):
+	"""Change the `stage` field of a UserProfile.
+
+	- Admins (is_staff) can change any user's stage by providing `user_id`.
+	- Regular users can change only their own stage.
+
+	Request JSON:
+	{
+		"stage": "verif",
+		"user_id": "17958522"  # optional for admins
+	}
+	"""
+	user = request.user
+
+	# Validate stage
+	stage = request.data.get('stage')
+	if not stage:
+		return Response({"error": "stage is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+	allowed = ['normal', 'verif', 'verif2', 'supp', 'meet']
+	if stage not in allowed:
+		return Response({"error": f"Invalid stage. Allowed: {allowed}"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# Determine target user profile
+	target_profile = None
+	if user.is_staff:
+		# admin may pass user_id (either int or str) or django_user id
+		user_id = request.data.get('user_id')
+		if not user_id:
+			return Response({"error": "user_id is required for admin requests"}, status=status.HTTP_400_BAD_REQUEST)
+
+		# Try to find by user_id in UserProfile
+		try:
+			target_profile = UserProfile.objects.filter(user_id=str(user_id)).first()
+			if not target_profile:
+				target_profile = UserProfile.objects.filter(user_id=int(user_id)).first()
+		except (ValueError, TypeError):
+			target_profile = UserProfile.objects.filter(user_id=str(user_id)).first()
+	else:
+		try:
+			target_profile = UserProfile.objects.get(django_user=user)
+		except UserProfile.DoesNotExist:
+			return Response({"error": "UserProfile not found for current user"}, status=status.HTTP_404_NOT_FOUND)
+
+	if not target_profile:
+		return Response({"error": "Target user profile not found"}, status=status.HTTP_404_NOT_FOUND)
+
+	# Update stage
+	target_profile.stage = stage
+	try:
+		target_profile.save()
+	except Exception as e:
+		return Response({"error": "Failed to save stage", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+	from .serializers import UserProfileUpdateSerializer
+	serializer = UserProfileUpdateSerializer(target_profile)
+	return Response(serializer.data, status=status.HTTP_200_OK)
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def login(request):
