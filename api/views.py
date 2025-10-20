@@ -211,7 +211,6 @@ def transaction_create(request):
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 
-@csrf_exempt
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def telegram_webhook(request):
