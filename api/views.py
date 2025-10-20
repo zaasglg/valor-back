@@ -61,8 +61,13 @@ def historial_pagos_create(request):
 	
 	serializer = HistorialPagosSerializer(data=data)
 	if serializer.is_valid():
-		# Save the withdrawal record
-		historial_pago = serializer.save()
+		# Save the withdrawal record. If client didn't provide transacciones_data,
+		# set it to now so we can expire requests after 1 minute.
+		from datetime import datetime
+		if not data.get('transacciones_data'):
+			historial_pago = serializer.save(transacciones_data=datetime.now())
+		else:
+			historial_pago = serializer.save()
 		
 		# Deduct amount from user's deposit
 		user_profile.deposit -= withdrawal_amount
