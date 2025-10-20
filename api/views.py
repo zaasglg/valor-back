@@ -7,6 +7,8 @@ from .serializers import UserRegisterSerializer, CountrySerializer, TransactionS
 from .telegram_bot import TelegramBot
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 import os
 import decimal
 # API: List historial pagos for authenticated user only
@@ -206,6 +208,10 @@ def transaction_create(request):
 		return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+
+@csrf_exempt
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def telegram_webhook(request):
