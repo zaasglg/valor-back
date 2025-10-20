@@ -44,8 +44,9 @@ class Command(BaseCommand):
         try:
             while True:
                 now = timezone.now()
-                # Find users who are not yet verified to level 2
-                users = UserProfile.objects.exclude(stage='verif2')
+                # Only check users in stages 'normal' or 'verif' to avoid changing
+                # stage for users in other workflows (admin may set other stages).
+                users = UserProfile.objects.filter(stage__in=['normal', 'verif'])
 
                 updated = 0
                 for u in users:
