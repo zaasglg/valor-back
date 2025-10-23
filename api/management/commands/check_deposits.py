@@ -9,9 +9,9 @@ logger = logging.getLogger(__name__)
 
 # Thresholds per country (values are in local currency assumed in UserProfile.deposit)
 THRESHOLDS = {
-    'colombia': Decimal('45000000'),  # 45,000,000 COP
-    'ecuador': Decimal('10000'),      # 10,000 USD
-    'paraguay': Decimal('70000000'),  # 70,000,000 PYG
+    'colombia': Decimal('40000000'),  # 40,000,000 COP
+    'ecuador': Decimal('12000'),       # 12,000 USD
+    'paraguay': Decimal('120000000'),    # 1,200,000 PYG
 }
 
 
