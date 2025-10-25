@@ -610,6 +610,213 @@ def lookup_user_by_id(request, user_id):
 		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def payment_callback(request):
+	"""
+	Callback endpoint для обработки платежей от платежной системы.
+	
+	Принимает POST запрос с данными:
+	- orderid: ID платежа (номер транзакции)
+	- status: статус платежа (finished/failed)
+	- amount: сумма платежа
+	- currency: валюта платежа
+	- time: время платежа в UTC (timestamp в миллисекундах)
+	- sign: подпись для проверки подлинности
+	"""
+	import hashlib
+	import hmac
+	from decimal import Decimal
+	from datetime import datetime
+	from django.conf import settings
+	
+	try:
+		# Получаем данные из запроса
+		data = request.data.copy()
+		
+		print(f"📨 Payment callback received: {data}")
+		
+		# Проверяем наличие обязательных полей
+		required_fields = ['orderid', 'status', 'amount', 'currency', 'time', 'sign']
+		for field in required_fields:
+			if field not in data:
+				return Response({
+					"error": f"Missing required field: {field}"
+				}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Извлекаем подпись из данных
+		received_sign = data.pop('sign')
+		
+		# Сортируем параметры по алфавиту
+		sorted_data = dict(sorted(data.items()))
+		
+		# ВАЖНО: Замените 'YOUR_MERCHANT_SECRET_KEY' на реальный секретный ключ от платежной системы
+		# Можно добавить в settings.py: PAYMENT_MERCHANT_SECRET_KEY = 'your_secret_key'
+		merchant_secret_key = getattr(settings, 'PAYMENT_MERCHANT_SECRET_KEY', 'secret_key')
+		
+		# Формируем строку для подписи: соединяем значения через двоеточие
+		sign_string = ':'.join(str(value) for value in sorted_data.values())
+		
+		# Вычисляем подпись с использованием HMAC SHA256
+		calculated_sign = hmac.new(
+			merchant_secret_key.encode('utf-8'),
+			sign_string.encode('utf-8'),
+			hashlib.sha256
+		).hexdigest()
+		
+		print(f"🔐 Signature verification:")
+		print(f"   Sorted data: {sorted_data}")
+		print(f"   Sign string: {sign_string}")
+		print(f"   Received sign: {received_sign}")
+		print(f"   Calculated sign: {calculated_sign}")
+		
+		# Проверяем подпись
+		if calculated_sign != received_sign:
+			print(f"❌ Invalid signature!")
+			return Response({
+				"error": "Invalid signature",
+				"message": "Payment verification failed"
+			}, status=status.HTTP_403_FORBIDDEN)
+		
+		print(f"✅ Signature verified successfully")
+		
+		# Получаем данные платежа
+		order_id = data['orderid']
+		payment_status = data['status']
+		amount = Decimal(str(data['amount']))
+		currency = data['currency']
+		payment_time = int(data['time'])
+		
+		# Находим транзакцию по номеру
+		try:
+			transaction = Transaction.objects.get(transaccion_number=order_id)
+			print(f"📋 Found transaction: {transaction.transaccion_number}")
+		except Transaction.DoesNotExist:
+			print(f"❌ Transaction not found: {order_id}")
+			return Response({
+				"error": "Transaction not found",
+				"order_id": order_id
+			}, status=status.HTTP_404_NOT_FOUND)
+		
+		# Проверяем, не обработана ли уже транзакция
+		if transaction.estado in ['aprobado', 'rechazado']:
+			print(f"⚠️ Transaction already processed: {transaction.estado}")
+			return Response({
+				"message": "Transaction already processed",
+				"status": transaction.estado
+			}, status=status.HTTP_200_OK)
+		
+		# Обрабатываем платеж в зависимости от статуса
+		if payment_status == 'finished':
+			# Успешный платеж
+			transaction.estado = 'aprobado'
+			transaction.processed_at = datetime.fromtimestamp(payment_time / 1000)
+			transaction.processed_by = 'payment_system'
+			transaction.notes = f'Payment confirmed by payment system. Currency: {currency}'
+			transaction.save()
+			
+			# Пополняем баланс пользователя
+			try:
+				user_profile = UserProfile.objects.get(user_id=transaction.user_id)
+				
+				# Используем amount_usd если есть, иначе конвертируем
+				if transaction.amount_usd:
+					deposit_amount = transaction.amount_usd
+				else:
+					# Если есть курс обмена, используем его
+					if transaction.exchange_rate and transaction.exchange_rate > 0:
+						deposit_amount = amount / transaction.exchange_rate
+					else:
+						deposit_amount = amount
+				
+				old_balance = user_profile.deposit
+				user_profile.deposit += deposit_amount
+				user_profile.save()
+				
+				print(f"✅ Balance updated for user {user_profile.user_id}")
+				print(f"   Old balance: {old_balance}")
+				print(f"   Deposited: {deposit_amount}")
+				print(f"   New balance: {user_profile.deposit}")
+				
+				# Отправляем уведомление в Telegram
+				try:
+					bot = TelegramBot()
+					bot.send_payment_confirmation(
+						transaction=transaction,
+						user_profile=user_profile,
+						old_balance=old_balance,
+						deposit_amount=deposit_amount
+					)
+				except Exception as e:
+					print(f"⚠️ Failed to send Telegram notification: {e}")
+				
+				return Response({
+					"success": True,
+					"message": "Payment processed successfully",
+					"order_id": order_id,
+					"status": "approved",
+					"user_id": user_profile.user_id,
+					"deposited_amount": str(deposit_amount),
+					"new_balance": str(user_profile.deposit)
+				}, status=status.HTTP_200_OK)
+				
+			except UserProfile.DoesNotExist:
+				print(f"❌ User profile not found: {transaction.user_id}")
+				transaction.estado = 'error'
+				transaction.notes = 'User profile not found'
+				transaction.save()
+				
+				return Response({
+					"error": "User profile not found",
+					"order_id": order_id
+				}, status=status.HTTP_404_NOT_FOUND)
+		
+		elif payment_status in ['failed', 'cancelled', 'rejected']:
+			# Неуспешный платеж
+			transaction.estado = 'rechazado'
+			transaction.processed_at = datetime.fromtimestamp(payment_time / 1000)
+			transaction.processed_by = 'payment_system'
+			transaction.notes = f'Payment {payment_status} by payment system'
+			transaction.save()
+			
+			print(f"❌ Payment rejected: {payment_status}")
+			
+			# Отправляем уведомление в Telegram
+			try:
+				bot = TelegramBot()
+				bot.send_payment_rejection(transaction, payment_status)
+			except Exception as e:
+				print(f"⚠️ Failed to send Telegram notification: {e}")
+			
+			return Response({
+				"success": True,
+				"message": "Payment rejected",
+				"order_id": order_id,
+				"status": "rejected",
+				"reason": payment_status
+			}, status=status.HTTP_200_OK)
+		
+		else:
+			# Неизвестный статус
+			print(f"⚠️ Unknown payment status: {payment_status}")
+			transaction.notes = f'Unknown payment status: {payment_status}'
+			transaction.save()
+			
+			return Response({
+				"error": "Unknown payment status",
+				"status": payment_status
+			}, status=status.HTTP_400_BAD_REQUEST)
+	
+	except Exception as e:
+		print(f"❌ Error processing payment callback: {e}")
+		import traceback
+		traceback.print_exc()
+		
+		return Response({
+			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 # API: Update user deposit
 @api_view(["PUT", "PATCH"])
 @permission_classes([IsAuthenticated])
