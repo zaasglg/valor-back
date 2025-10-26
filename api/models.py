@@ -28,6 +28,8 @@ class UserProfile(models.Model):
 	verification_start_date = models.DateTimeField(blank=True, null=True)
 	chicken_trap_coefficient = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 	first_bonus_used = models.BooleanField(default=False, help_text="Indica si el usuario ya utilizó su primer bono")
+	email_verified = models.BooleanField(default=False, help_text="Indica si el email del usuario está verificado")
+	email_verification_token = models.CharField(max_length=255, blank=True, null=True, help_text="Token para verificación de email")
 
 
 	def save(self, *args, **kwargs):

@@ -339,6 +339,14 @@ def register(request):
 		user_profile.django_user = django_user
 		user_profile.save()
 		
+		# Отправляем подтверждающее письмо на email
+		try:
+			from .email_utils import send_verification_email
+			send_verification_email(user_profile)
+		except Exception as e:
+			print(f"❌ Error sending verification email: {e}")
+			# Не прерываем регистрацию, если не удалось отправить письмо
+		
 		# Отправляем уведомление о регистрации в Telegram
 		try:
 			bot = TelegramBot()
@@ -356,6 +364,7 @@ def register(request):
 		data = serializer.data.copy()
 		data["refresh"] = str(refresh)
 		data["access"] = str(refresh.access_token)
+		data["email_verified"] = user_profile.email_verified
 		return Response(data, status=status.HTTP_201_CREATED)
 	return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -505,7 +514,8 @@ def get_user_info(request):
 			'stage_balance': user.stage_balance,
 			'verification_start_date': user.verification_start_date,
 			'chicken_trap_coefficient': user.chicken_trap_coefficient,
-			'first_bonus_used': user.first_bonus_used
+			'first_bonus_used': user.first_bonus_used,
+			'email_verified': user.email_verified
 		}
 		return Response(data)
 	except UserProfile.DoesNotExist:
@@ -908,6 +918,112 @@ def lookup_user_by_id(request, user_id):
 		return Response({
 			"success": False,
 			"user": None,
+			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def verify_email(request, token):
+	"""
+	API endpoint для подтверждения email по токену
+	"""
+	try:
+		# Ищем пользователя по токену верификации
+		user_profile = UserProfile.objects.get(email_verification_token=token)
+		
+		# Проверяем, не подтвержден ли уже email
+		if user_profile.email_verified:
+			return Response({
+				"success": True,
+				"message": "Email уже подтвержден",
+				"already_verified": True
+			}, status=status.HTTP_200_OK)
+		
+		# Подтверждаем email
+		user_profile.email_verified = True
+		user_profile.email_verification_token = None  # Очищаем токен
+		user_profile.save()
+		
+		# Отправляем приветственное письмо
+		try:
+			from .email_utils import send_welcome_email
+			send_welcome_email(user_profile)
+		except Exception as e:
+			print(f"❌ Error sending welcome email: {e}")
+		
+		# Отправляем уведомление в Telegram
+		try:
+			bot = TelegramBot()
+			bot.send_email_verification_notification(
+				user_id=user_profile.user_id,
+				email=user_profile.email
+			)
+		except Exception as e:
+			print(f"❌ Error sending Telegram notification: {e}")
+		
+		return Response({
+			"success": True,
+			"message": "Email успешно подтвержден!",
+			"user_id": user_profile.user_id,
+			"email": user_profile.email
+		}, status=status.HTTP_200_OK)
+		
+	except UserProfile.DoesNotExist:
+		return Response({
+			"success": False,
+			"error": "Неверный токен верификации",
+			"message": "Токен не найден или уже использован"
+		}, status=status.HTTP_404_NOT_FOUND)
+		
+	except Exception as e:
+		return Response({
+			"success": False,
+			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def resend_verification_email(request):
+	"""
+	API endpoint для повторной отправки письма с подтверждением
+	"""
+	try:
+		user_profile = UserProfile.objects.get(django_user=request.user)
+		
+		# Проверяем, не подтвержден ли уже email
+		if user_profile.email_verified:
+			return Response({
+				"success": False,
+				"error": "Email уже подтвержден",
+				"message": "Ваш email уже подтвержден"
+			}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Отправляем письмо с подтверждением
+		from .email_utils import send_verification_email
+		success = send_verification_email(user_profile)
+		
+		if success:
+			return Response({
+				"success": True,
+				"message": "Письмо с подтверждением отправлено",
+				"email": user_profile.email
+			}, status=status.HTTP_200_OK)
+		else:
+			return Response({
+				"success": False,
+				"error": "Не удалось отправить письмо",
+				"message": "Попробуйте позже"
+			}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+		
+	except UserProfile.DoesNotExist:
+		return Response({
+			"error": "User profile not found"
+		}, status=status.HTTP_404_NOT_FOUND)
+	except Exception as e:
+		return Response({
 			"error": "Internal server error",
 			"message": str(e)
 		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
