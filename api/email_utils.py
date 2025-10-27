@@ -15,14 +15,25 @@ def send_verification_email(user_profile):
     Отправляет подтверждающее письмо пользователю
     """
     try:
+        # Проверяем настройки email
+        from django.conf import settings
+        if not hasattr(settings, 'EMAIL_HOST_USER') or not settings.EMAIL_HOST_USER:
+            print("❌ EMAIL_HOST_USER not configured")
+            return False
+        
+        # Проверяем, не используется ли console backend (для отладки)
+        if settings.EMAIL_BACKEND == "django.core.mail.backends.console.EmailBackend":
+            print("ℹ️ Using console email backend - email will be printed to console")
+        
         # Генерируем токен верификации
         verification_token = generate_verification_token()
         user_profile.email_verification_token = verification_token
         user_profile.save()
         
         # Формируем ссылку для подтверждения
-        # В продакшене замените на ваш реальный домен
-        verification_url = f"https://api.valor-games.co/api/verify-email/{verification_token}/"
+        # Базовый URL берём из настроек (по умолчанию основной сайт)
+        base_url = getattr(settings, 'VERIFICATION_BASE_URL', 'https://valor-games.co').rstrip('/')
+        verification_url = f"{base_url}/verify-email/{verification_token}/"
         
         # Тема письма
         subject = 'Confirmación de registro - Valor Games'
@@ -124,6 +135,8 @@ def send_verification_email(user_profile):
         
     except Exception as e:
         print(f"❌ Error sending verification email to {user_profile.email}: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
