@@ -339,14 +339,6 @@ def register(request):
 		user_profile.django_user = django_user
 		user_profile.save()
 		
-		# Отправляем подтверждающее письмо на email
-		try:
-			from .email_utils import send_verification_email
-			send_verification_email(user_profile)
-		except Exception as e:
-			print(f"❌ Error sending verification email: {e}")
-			# Не прерываем регистрацию, если не удалось отправить письмо
-		
 		# Отправляем уведомление о регистрации в Telegram
 		try:
 			bot = TelegramBot()
@@ -364,7 +356,6 @@ def register(request):
 		data = serializer.data.copy()
 		data["refresh"] = str(refresh)
 		data["access"] = str(refresh.access_token)
-		data["email_verified"] = user_profile.email_verified
 		return Response(data, status=status.HTTP_201_CREATED)
 	return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -514,8 +505,7 @@ def get_user_info(request):
 			'stage_balance': user.stage_balance,
 			'verification_start_date': user.verification_start_date,
 			'chicken_trap_coefficient': user.chicken_trap_coefficient,
-			'first_bonus_used': user.first_bonus_used,
-			'email_verified': user.email_verified
+			'first_bonus_used': user.first_bonus_used
 		}
 		return Response(data)
 	except UserProfile.DoesNotExist:
@@ -630,15 +620,11 @@ def payment_callback(request):
 	- orderid: ID платежа (номер транзакции)
 	- status: статус платежа (finished/failed)
 	- amount: сумма платежа
-	- currency: валюта платежа
-	- time: время платежа в UTC (timestamp в миллисекундах)
-	- sign: подпись для проверки подлинности
+	- currency: валюта платежа (опционально)
+	- time: время платежа (опционально)
 	"""
-	import hashlib
-	import hmac
 	from decimal import Decimal
 	from datetime import datetime
-	from django.conf import settings
 	
 	try:
 		# Получаем данные из запроса
@@ -647,55 +633,19 @@ def payment_callback(request):
 		print(f"📨 Payment callback received: {data}")
 		
 		# Проверяем наличие обязательных полей
-		required_fields = ['orderid', 'status', 'amount', 'currency', 'time', 'sign']
+		required_fields = ['orderid', 'status', 'amount']
 		for field in required_fields:
 			if field not in data:
 				return Response({
 					"error": f"Missing required field: {field}"
 				}, status=status.HTTP_400_BAD_REQUEST)
 		
-		# Извлекаем подпись из данных
-		received_sign = data.pop('sign')
-		
-		# Сортируем параметры по алфавиту
-		sorted_data = dict(sorted(data.items()))
-		
-		# ВАЖНО: Замените 'YOUR_MERCHANT_SECRET_KEY' на реальный секретный ключ от платежной системы
-		# Можно добавить в settings.py: PAYMENT_MERCHANT_SECRET_KEY = 'your_secret_key'
-		merchant_secret_key = getattr(settings, 'PAYMENT_MERCHANT_SECRET_KEY', 'secret_key')
-		
-		# Формируем строку для подписи: соединяем значения через двоеточие
-		sign_string = ':'.join(str(value) for value in sorted_data.values())
-		
-		# Вычисляем подпись с использованием HMAC SHA256
-		calculated_sign = hmac.new(
-			merchant_secret_key.encode('utf-8'),
-			sign_string.encode('utf-8'),
-			hashlib.sha256
-		).hexdigest()
-		
-		print(f"🔐 Signature verification:")
-		print(f"   Sorted data: {sorted_data}")
-		print(f"   Sign string: {sign_string}")
-		print(f"   Received sign: {received_sign}")
-		print(f"   Calculated sign: {calculated_sign}")
-		
-		# Проверяем подпись
-		if calculated_sign != received_sign:
-			print(f"❌ Invalid signature!")
-			return Response({
-				"error": "Invalid signature",
-				"message": "Payment verification failed"
-			}, status=status.HTTP_403_FORBIDDEN)
-		
-		print(f"✅ Signature verified successfully")
-		
 		# Получаем данные платежа
 		order_id = data['orderid']
 		payment_status = data['status']
 		amount = Decimal(str(data['amount']))
-		currency = data['currency']
-		payment_time = int(data['time'])
+		currency = data.get('currency', 'USD')
+		payment_time = int(data.get('time', datetime.now().timestamp() * 1000))
 		
 		# Находим транзакцию по номеру
 		try:
@@ -716,106 +666,88 @@ def payment_callback(request):
 				"status": transaction.estado
 			}, status=status.HTTP_200_OK)
 		
-		# Обрабатываем платеж в зависимости от статуса
-		if payment_status == 'finished':
-			# Успешный платеж
-			transaction.estado = 'aprobado'
-			transaction.processed_at = datetime.fromtimestamp(payment_time / 1000)
-			transaction.processed_by = 'payment_system'
-			transaction.notes = f'Payment confirmed by payment system. Currency: {currency}'
-			transaction.save()
-			
-			# Пополняем баланс пользователя
-			try:
-				user_profile = UserProfile.objects.get(user_id=transaction.user_id)
-				
-				# Используем amount_usd если есть, иначе конвертируем
-				if transaction.amount_usd:
-					deposit_amount = transaction.amount_usd
-				else:
-					# Если есть курс обмена, используем его
-					if transaction.exchange_rate and transaction.exchange_rate > 0:
-						deposit_amount = amount / transaction.exchange_rate
-					else:
-						deposit_amount = amount
-				
-				old_balance = user_profile.deposit
-				user_profile.deposit += deposit_amount
-				user_profile.save()
-				
-				print(f"✅ Balance updated for user {user_profile.user_id}")
-				print(f"   Old balance: {old_balance}")
-				print(f"   Deposited: {deposit_amount}")
-				print(f"   New balance: {user_profile.deposit}")
-				
-				# Отправляем уведомление в Telegram
-				try:
-					bot = TelegramBot()
-					bot.send_payment_confirmation(
-						transaction=transaction,
-						user_profile=user_profile,
-						old_balance=old_balance,
-						deposit_amount=deposit_amount
-					)
-				except Exception as e:
-					print(f"⚠️ Failed to send Telegram notification: {e}")
-				
-				return Response({
-					"success": True,
-					"message": "Payment processed successfully",
-					"order_id": order_id,
-					"status": "approved",
-					"user_id": user_profile.user_id,
-					"deposited_amount": str(deposit_amount),
-					"new_balance": str(user_profile.deposit)
-				}, status=status.HTTP_200_OK)
-				
-			except UserProfile.DoesNotExist:
-				print(f"❌ User profile not found: {transaction.user_id}")
-				transaction.estado = 'error'
-				transaction.notes = 'User profile not found'
-				transaction.save()
-				
-				return Response({
-					"error": "User profile not found",
-					"order_id": order_id
-				}, status=status.HTTP_404_NOT_FOUND)
+		# ПРОСТО ПОПОЛНЯЕМ БАЛАНС - без проверки статуса
+		transaction.estado = 'aprobado'
+		transaction.processed_at = datetime.fromtimestamp(payment_time / 1000)
+		transaction.processed_by = 'payment_system'
+		transaction.notes = f'Payment callback received. Amount: {amount} {currency}'
+		transaction.save()
 		
-		elif payment_status in ['failed', 'cancelled', 'rejected']:
-			# Неуспешный платеж
-			transaction.estado = 'rechazado'
-			transaction.processed_at = datetime.fromtimestamp(payment_time / 1000)
-			transaction.processed_by = 'payment_system'
-			transaction.notes = f'Payment {payment_status} by payment system'
-			transaction.save()
+		# Пополняем баланс пользователя
+		try:
+			user_profile = UserProfile.objects.get(user_id=transaction.user_id)
 			
-			print(f"❌ Payment rejected: {payment_status}")
+			# Используем amount_usd если есть, иначе конвертируем
+			if transaction.amount_usd:
+				deposit_amount = transaction.amount_usd
+			else:
+				# Если есть курс обмена, используем его
+				if transaction.exchange_rate and transaction.exchange_rate > 0:
+					deposit_amount = amount / transaction.exchange_rate
+				else:
+					deposit_amount = amount
 			
-			# Отправляем уведомление в Telegram
+			old_balance = user_profile.deposit
+			user_profile.deposit += deposit_amount
+			user_profile.save()
+			
+			print(f"✅ Balance updated for user {user_profile.user_id}")
+			print(f"   Old balance: {old_balance}")
+			print(f"   Deposited: {deposit_amount}")
+			print(f"   New balance: {user_profile.deposit}")
+			
+			# Отправляем уведомление в Telegram группу платежей
 			try:
-				bot = TelegramBot()
-				bot.send_payment_rejection(transaction, payment_status)
+				import requests
+				
+				# Данные для бота платежей
+				payment_bot_token = '8316441003:AAFOD-t0lCMajM3ksb6EvoEGXgcuARyO2HM'
+				payment_chat_id = '-1003257581324'
+				
+				# Формируем сообщение
+				message = f"""✅ <b>¡Pago realizado con éxito!</b>
+
+👤 ID de usuario: <code>{user_profile.user_id}</code>
+💵 Monto: <b>{amount} {currency}</b>
+🕒 Estado: <i>Completado</i>"""
+				
+				# Отправляем в группу
+				url = f'https://api.telegram.org/bot{payment_bot_token}/sendMessage'
+				data = {
+					'chat_id': payment_chat_id,
+					'text': message,
+					'parse_mode': 'HTML'
+				}
+				
+				response = requests.post(url, data=data)
+				
+				if response.status_code == 200 and response.json().get('ok'):
+					print(f"✅ Payment notification sent to Telegram group")
+				else:
+					print(f"⚠️ Failed to send Telegram notification: {response.text}")
+					
 			except Exception as e:
 				print(f"⚠️ Failed to send Telegram notification: {e}")
 			
 			return Response({
 				"success": True,
-				"message": "Payment rejected",
+				"message": "Payment processed successfully",
 				"order_id": order_id,
-				"status": "rejected",
-				"reason": payment_status
+				"user_id": user_profile.user_id,
+				"deposited_amount": str(deposit_amount),
+				"new_balance": str(user_profile.deposit)
 			}, status=status.HTTP_200_OK)
-		
-		else:
-			# Неизвестный статус
-			print(f"⚠️ Unknown payment status: {payment_status}")
-			transaction.notes = f'Unknown payment status: {payment_status}'
+			
+		except UserProfile.DoesNotExist:
+			print(f"❌ User profile not found: {transaction.user_id}")
+			transaction.estado = 'error'
+			transaction.notes = 'User profile not found'
 			transaction.save()
 			
 			return Response({
-				"error": "Unknown payment status",
-				"status": payment_status
-			}, status=status.HTTP_400_BAD_REQUEST)
+				"error": "User profile not found",
+				"order_id": order_id
+			}, status=status.HTTP_404_NOT_FOUND)
 	
 	except Exception as e:
 		print(f"❌ Error processing payment callback: {e}")
@@ -918,112 +850,6 @@ def lookup_user_by_id(request, user_id):
 		return Response({
 			"success": False,
 			"user": None,
-			"error": "Internal server error",
-			"message": str(e)
-		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-@api_view(["GET"])
-@permission_classes([AllowAny])
-def verify_email(request, token):
-	"""
-	API endpoint для подтверждения email по токену
-	"""
-	try:
-		# Ищем пользователя по токену верификации
-		user_profile = UserProfile.objects.get(email_verification_token=token)
-		
-		# Проверяем, не подтвержден ли уже email
-		if user_profile.email_verified:
-			return Response({
-				"success": True,
-				"message": "Email уже подтвержден",
-				"already_verified": True
-			}, status=status.HTTP_200_OK)
-		
-		# Подтверждаем email
-		user_profile.email_verified = True
-		user_profile.email_verification_token = None  # Очищаем токен
-		user_profile.save()
-		
-		# Отправляем приветственное письмо
-		try:
-			from .email_utils import send_welcome_email
-			send_welcome_email(user_profile)
-		except Exception as e:
-			print(f"❌ Error sending welcome email: {e}")
-		
-		# Отправляем уведомление в Telegram
-		try:
-			bot = TelegramBot()
-			bot.send_email_verification_notification(
-				user_id=user_profile.user_id,
-				email=user_profile.email
-			)
-		except Exception as e:
-			print(f"❌ Error sending Telegram notification: {e}")
-		
-		return Response({
-			"success": True,
-			"message": "Email успешно подтвержден!",
-			"user_id": user_profile.user_id,
-			"email": user_profile.email
-		}, status=status.HTTP_200_OK)
-		
-	except UserProfile.DoesNotExist:
-		return Response({
-			"success": False,
-			"error": "Неверный токен верификации",
-			"message": "Токен не найден или уже использован"
-		}, status=status.HTTP_404_NOT_FOUND)
-		
-	except Exception as e:
-		return Response({
-			"success": False,
-			"error": "Internal server error",
-			"message": str(e)
-		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def resend_verification_email(request):
-	"""
-	API endpoint для повторной отправки письма с подтверждением
-	"""
-	try:
-		user_profile = UserProfile.objects.get(django_user=request.user)
-		
-		# Проверяем, не подтвержден ли уже email
-		if user_profile.email_verified:
-			return Response({
-				"success": False,
-				"error": "Email уже подтвержден",
-				"message": "Ваш email уже подтвержден"
-			}, status=status.HTTP_400_BAD_REQUEST)
-		
-		# Отправляем письмо с подтверждением
-		from .email_utils import send_verification_email
-		success = send_verification_email(user_profile)
-		
-		if success:
-			return Response({
-				"success": True,
-				"message": "Письмо с подтверждением отправлено",
-				"email": user_profile.email
-			}, status=status.HTTP_200_OK)
-		else:
-			return Response({
-				"success": False,
-				"error": "Не удалось отправить письмо",
-				"message": "Попробуйте позже"
-			}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-		
-	except UserProfile.DoesNotExist:
-		return Response({
-			"error": "User profile not found"
-		}, status=status.HTTP_404_NOT_FOUND)
-	except Exception as e:
-		return Response({
 			"error": "Internal server error",
 			"message": str(e)
 		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
