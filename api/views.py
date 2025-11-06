@@ -614,149 +614,276 @@ def lookup_user_by_id(request, user_id):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def payment_callback(request):
-	"""
-	Callback endpoint для обработки платежей от платежной системы.
-	
-	Принимает POST запрос с данными:
-	- orderid: ID платежа (номер транзакции)
-	- status: статус платежа (finished/failed)
-	- amount: сумма платежа
-	- currency: валюта платежа (опционально)
-	- time: время платежа (опционально)
-	"""
-	from decimal import Decimal
-	from datetime import datetime
-	
-	try:
-		# Получаем данные из запроса
-		data = request.data.copy()
-		
-		print(f"📨 Payment callback received: {data}")
-		
-		# Проверяем наличие обязательных полей
-		required_fields = ['orderid', 'status', 'amount']
-		for field in required_fields:
-			if field not in data:
-				return Response({
-					"error": f"Missing required field: {field}"
-				}, status=status.HTTP_400_BAD_REQUEST)
-		
-		# Получаем данные платежа
-		order_id = data['orderid']
-		payment_status = data['status']
-		amount = Decimal(str(data['amount']))
-		currency = data.get('currency', 'USD')
-		payment_time = int(data.get('time', datetime.now().timestamp() * 1000))
-		
-		# Находим транзакцию по номеру
-		try:
-			transaction = Transaction.objects.get(transaccion_number=order_id)
-			print(f"📋 Found transaction: {transaction.transaccion_number}")
-		except Transaction.DoesNotExist:
-			print(f"❌ Transaction not found: {order_id}")
-			return Response({
-				"error": "Transaction not found",
-				"order_id": order_id
-			}, status=status.HTTP_404_NOT_FOUND)
-		
-		# Проверяем, не обработана ли уже транзакция
-		if transaction.estado in ['aprobado', 'rechazado']:
-			print(f"⚠️ Transaction already processed: {transaction.estado}")
-			return Response({
-				"message": "Transaction already processed",
-				"status": transaction.estado
-			}, status=status.HTTP_200_OK)
-		
-		# ПРОСТО ПОПОЛНЯЕМ БАЛАНС - без проверки статуса
-		transaction.estado = 'aprobado'
-		transaction.processed_at = datetime.fromtimestamp(payment_time / 1000)
-		transaction.processed_by = 'payment_system'
-		transaction.notes = f'Payment callback received. Amount: {amount} {currency}'
-		transaction.save()
-		
-		# Пополняем баланс пользователя
-		try:
-			user_profile = UserProfile.objects.get(user_id=transaction.user_id)
-			
-			# Используем amount_usd если есть, иначе конвертируем
-			if transaction.amount_usd:
-				deposit_amount = transaction.amount_usd
-			else:
-				# Если есть курс обмена, используем его
-				if transaction.exchange_rate and transaction.exchange_rate > 0:
-					deposit_amount = amount / transaction.exchange_rate
-				else:
-					deposit_amount = amount
-			
-			old_balance = user_profile.deposit
-			user_profile.deposit += deposit_amount
-			user_profile.save()
-			
-			print(f"✅ Balance updated for user {user_profile.user_id}")
-			print(f"   Old balance: {old_balance}")
-			print(f"   Deposited: {deposit_amount}")
-			print(f"   New balance: {user_profile.deposit}")
-			
-			# Отправляем уведомление в Telegram группу платежей
-			try:
-				# Данные для бота платежей
-				payment_bot_token = '8316441003:AAFOD-t0lCMajM3ksb6EvoEGXgcuARyO2HM'
-				payment_chat_id = '-1003257581324'
-				
-				# Формируем сообщение
-				message = f"""✅ <b>¡Pago realizado con éxito!</b>
+ """
+ Callback endpoint для обработки платежей от платежной системы.
+ 
+ Принимает POST запрос с данными:
+ - orderid: ID платежа (номер транзакции)
+ - status: статус платежа (finished/failed/cancelled/etc)
+ - amount: сумма платежа
+ - currency: валюта платежа
+ - time: время платежа в UTC (timestamp в миллисекундах)
+ - sign: подпись с ключом мерчанта (игнорируется)
+ """
+ from decimal import Decimal
+ from datetime import datetime
+ 
+ try:
+  data = request.data.copy()
+  
+  print(f"📨 Payment callback received: {data}")
+  
+  # Проверяем обязательные поля
+  required_fields = ['orderid', 'status', 'amount']
+  for field in required_fields:
+   if field not in data:
+    return Response({
+     "error": f"Missing required field: {field}"
+    }, status=status.HTTP_400_BAD_REQUEST)
+  
+  # Получаем данные платежа
+  order_id = data['orderid']
+  payment_status = data['status']
+  amount = Decimal(str(data['amount']))
+  currency = data.get('currency', 'USD')
+  payment_time = int(data.get('time', datetime.now().timestamp() * 1000))
+  
+  # Ищем транзакцию по номеру (order_id = transaccion_number)
+  print(f"🔍 Searching for transaction with number: {order_id}")
+  
+  try:
+   # Сначала пробуем точное совпадение
+   transaction = Transaction.objects.get(transaccion_number=order_id)
+   print(f"📋 Found transaction: {transaction.transaccion_number} (ID: {transaction.id})")
+   print(f"   User ID: {transaction.user_id}")
+   print(f"   Amount: {transaction.transacciones_monto} {transaction.currency}")
+   print(f"   Current status: {transaction.estado}")
+   
+  except Transaction.DoesNotExist:
+   # Если не найдено, попробуем найти по частичному совпадению или другим вариантам
+   print(f"❌ Transaction not found with exact match: {order_id}")
+   
+   # Попробуем найти похожие транзакции для отладки
+   similar_transactions = Transaction.objects.filter(
+    transaccion_number__icontains=str(order_id)
+   )[:5]
+   
+   if similar_transactions:
+    print(f"🔍 Found {similar_transactions.count()} similar transactions:")
+    for t in similar_transactions:
+     print(f"   - {t.transaccion_number} (ID: {t.id}, Status: {t.estado})")
+   
+   # Также покажем последние транзакции для отладки
+   recent_transactions = Transaction.objects.all().order_by('-created_at')[:5]
+   print(f"📊 Last 5 transactions in database:")
+   for t in recent_transactions:
+    print(f"   - {t.transaccion_number} (ID: {t.id}, User: {t.user_id}, Status: {t.estado})")
+   
+   return Response({
+    "error": "Transaction not found",
+    "order_id": order_id,
+    "message": f"No transaction found with number: {order_id}"
+   }, status=status.HTTP_404_NOT_FOUND)
+  
+  except Transaction.MultipleObjectsReturned:
+   print(f"⚠️ Multiple transactions found with number: {order_id}")
+   transactions = Transaction.objects.filter(transaccion_number=order_id)
+   print(f"   Found {transactions.count()} transactions:")
+   for t in transactions:
+    print(f"   - ID: {t.id}, User: {t.user_id}, Status: {t.estado}, Created: {t.created_at}")
+   
+   # Берем самую последнюю транзакцию
+   transaction = transactions.order_by('-created_at').first()
+   print(f"📋 Using latest transaction: {transaction.id}")
+  
+  except Exception as e:
+   print(f"❌ Unexpected error searching for transaction: {e}")
+   return Response({
+    "error": "Database error",
+    "order_id": order_id,
+    "message": str(e)
+   }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+  
+  # Проверяем статус транзакции
+  print(f"📊 Transaction status check:")
+  print(f"   Current status: {transaction.estado}")
+  print(f"   Payment status from callback: {payment_status}")
+  print(f"   Transaction amount: {transaction.transacciones_monto}")
+  print(f"   Callback amount: {amount}")
+  
+  if transaction.estado in ['aprobado', 'rechazado']:
+   print(f"⚠️ Transaction already processed: {transaction.estado}")
+   return Response({
+    "message": "Transaction already processed",
+    "status": transaction.estado,
+    "transaction_id": transaction.id,
+    "processed_at": transaction.processed_at
+   }, status=status.HTTP_200_OK)
+  
+  # Дополнительная валидация суммы (опционально)
+  if abs(float(transaction.transacciones_monto) - float(amount)) > 0.01:
+   print(f"⚠️ Amount mismatch - Transaction: {transaction.transacciones_monto}, Callback: {amount}")
+   # Не блокируем, но логируем для отладки
+  
+  # Обрабатываем платеж в зависимости от статуса
+  if payment_status.lower() in ['finished', 'completed', 'success', 'approved']:
+   # Успешный платеж
+   print(f"✅ Processing successful payment: {payment_status}")
+   transaction.estado = 'aprobado'
+   transaction.order_id = order_id  # Сохраняем order_id от платежной системы
+   transaction.processed_at = datetime.fromtimestamp(payment_time / 1000)
+   transaction.processed_by = 'payment_system'
+   transaction.notes = f'Payment {payment_status} by payment system. Currency: {currency}'
+   transaction.save()
+   
+  elif payment_status.lower() in ['failed', 'cancelled', 'rejected', 'declined', 'error']:
+   # Неуспешный платеж
+   print(f"❌ Processing failed payment: {payment_status}")
+   transaction.estado = 'rechazado'
+   transaction.order_id = order_id  # Сохраняем order_id от платежной системы
+   transaction.processed_at = datetime.fromtimestamp(payment_time / 1000)
+   transaction.processed_by = 'payment_system'
+   transaction.notes = f'Payment {payment_status} by payment system'
+   transaction.save()
+   
+   # Отправляем уведомление об отклонении и завершаем
+   try:
+    payment_bot_token = '8316441003:AAFOD-t0lCMajM3ksb6EvoEGXgcuARyO2HM'
+    payment_chat_id = '-1003257581324'
+    
+    message = f"""❌ <b>¡Pago rechazado!</b>
+
+👤 ID de usuario: <code>{transaction.user_id}</code>
+💵 Monto: <b>{amount} {currency}</b>
+🕒 Estado: <i>{payment_status}</i>
+📅 Tiempo: <i>{datetime.fromtimestamp(payment_time / 1000).strftime('%d.%m.%Y %H:%M:%S')}</i>"""
+   
+    url = f'https://api.telegram.org/bot{payment_bot_token}/sendMessage'
+    telegram_data = {
+     'chat_id': payment_chat_id,
+     'text': message,
+     'parse_mode': 'HTML'
+    }
+    
+    response = requests.post(url, data=telegram_data)
+    
+    if response.status_code == 200 and response.json().get('ok'):
+     print(f"✅ Payment rejection notification sent to Telegram")
+    else:
+     print(f"⚠️ Failed to send Telegram rejection notification: {response.text}")
+     
+   except Exception as e:
+    print(f"⚠️ Failed to send Telegram rejection notification: {e}")
+   
+   return Response({
+    "success": True,
+    "message": "Payment rejected",
+    "order_id": order_id,
+    "status": "rejected",
+    "reason": payment_status
+   }, status=status.HTTP_200_OK)
+   
+  else:
+   # Неизвестный статус
+   print(f"⚠️ Unknown payment status: {payment_status}")
+   transaction.order_id = order_id  # Сохраняем order_id от платежной системы
+   transaction.notes = f'Unknown payment status: {payment_status} from payment system'
+   transaction.save()
+   
+   return Response({
+    "error": "Unknown payment status",
+    "status": payment_status,
+    "order_id": order_id
+   }, status=status.HTTP_400_BAD_REQUEST)
+  
+  try:
+   user_profile = UserProfile.objects.get(user_id=transaction.user_id)
+   
+   print(f"Transaction details - amount_usd: {transaction.amount_usd}, exchange_rate: {transaction.exchange_rate}, callback_amount: {amount}, currency: {currency}")
+
+   if transaction.amount_usd:
+    deposit_amount = transaction.amount_usd
+   else:
+    if transaction.exchange_rate and transaction.exchange_rate > 0:
+     deposit_amount = amount / transaction.exchange_rate
+    else:
+     deposit_amount = amount
+   
+   print(f"Calculated deposit amount: {deposit_amount}")
+   
+   old_balance = user_profile.deposit
+   user_profile.deposit += deposit_amount
+   
+   print(f"Balance update - old: {old_balance}, adding: {deposit_amount}, new: {user_profile.deposit}")
+   
+   user_profile.save()
+   
+   print(f"User profile saved successfully. Final balance: {user_profile.deposit}")
+   
+   try:
+    payment_bot_token = '8316441003:AAFOD-t0lCMajM3ksb6EvoEGXgcuARyO2HM'
+    payment_chat_id = '-1003257581324'
+    
+    message = f"""✅ <b>¡Pago realizado con éxito!</b>
 
 👤 ID de usuario: <code>{user_profile.user_id}</code>
 💵 Monto: <b>{amount} {currency}</b>
-🕒 Estado: <i>Completado</i>"""
-				
-				# Отправляем в группу
-				url = f'https://api.telegram.org/bot{payment_bot_token}/sendMessage'
-				data = {
-					'chat_id': payment_chat_id,
-					'text': message,
-					'parse_mode': 'HTML'
-				}
-				
-				response = requests.post(url, data=data)
-				
-				if response.status_code == 200 and response.json().get('ok'):
-					print(f"✅ Payment notification sent to Telegram group")
-				else:
-					print(f"⚠️ Failed to send Telegram notification: {response.text}")
-					
-			except Exception as e:
-				print(f"⚠️ Failed to send Telegram notification: {e}")
-			
-			return Response({
-				"success": True,
-				"message": "Payment processed successfully",
-				"order_id": order_id,
-				"user_id": user_profile.user_id,
-				"deposited_amount": str(deposit_amount),
-				"new_balance": str(user_profile.deposit)
-			}, status=status.HTTP_200_OK)
-			
-		except UserProfile.DoesNotExist:
-			print(f"❌ User profile not found: {transaction.user_id}")
-			transaction.estado = 'error'
-			transaction.notes = 'User profile not found'
-			transaction.save()
-			
-			return Response({
-				"error": "User profile not found",
-				"order_id": order_id
-			}, status=status.HTTP_404_NOT_FOUND)
-	
-	except Exception as e:
-		print(f"❌ Error processing payment callback: {e}")
-		import traceback
-		traceback.print_exc()
-		
-		return Response({
-			"error": "Internal server error",
-			"message": str(e)
-		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+💰 Depositado: <b>${deposit_amount}</b>
+🕒 Estado: <i>Completado</i>
+📅 Tiempo: <i>{datetime.fromtimestamp(payment_time / 1000).strftime('%d.%m.%Y %H:%M:%S')}</i>
+🔢 N° Transacción: <code>{order_id}</code>
+
+💼 Balance anterior: <b>${old_balance}</b>
+💰 Balance nuevo: <b>${user_profile.deposit}</b>
+📈 Incremento: <b>+${deposit_amount}</b>"""
+   
+    url = f'https://api.telegram.org/bot{payment_bot_token}/sendMessage'
+    data = {
+     'chat_id': payment_chat_id,
+     'text': message,
+     'parse_mode': 'HTML'
+    }
+    
+    response = requests.post(url, data=data)
+    
+    if response.status_code == 200 and response.json().get('ok'):
+     print(f"✅ Payment notification sent to Telegram group")
+    else:
+     print(f"⚠️ Failed to send Telegram notification: {response.text}")
+     
+   except Exception as e:
+    print(f"⚠️ Failed to send Telegram notification: {e}")
+   
+   return Response({
+    "success": True,
+    "message": "Payment processed successfully",
+    "order_id": order_id,
+    "user_id": user_profile.user_id,
+    "deposited_amount": str(deposit_amount),
+    "new_balance": str(user_profile.deposit)
+   }, status=status.HTTP_200_OK)
+   
+  except UserProfile.DoesNotExist:
+   print(f"❌ User profile not found: {transaction.user_id}")
+   transaction.estado = 'error'
+   transaction.notes = 'User profile notfound'
+   transaction.save()
+   
+   return Response({
+    "error": "User profile not found",
+    "order_id": order_id
+   }, status=status.HTTP_404_NOT_FOUND)
+ 
+ except Exception as e:
+  print(f"❌ Error processing payment callback: {e}")
+  import traceback
+  traceback.print_exc()
+  
+  return Response({
+   "error": "Internal server error",
+   "message": str(e)
+  }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 # API: Update user deposit
 @api_view(["PUT", "PATCH"])
@@ -851,4 +978,127 @@ def lookup_user_by_id(request, user_id):
 			"user": None,
 			"error": "Internal server error",
 			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def debug_transactions(request):
+	"""
+	Debug endpoint для проверки транзакций (только для отладки)
+	"""
+	try:
+		# Получаем параметры
+		transaction_number = request.GET.get('number')
+		user_id = request.GET.get('user_id')
+		limit = int(request.GET.get('limit', 10))
+		
+		transactions = Transaction.objects.all()
+		
+		# Фильтруем по номеру транзакции
+		if transaction_number:
+			transactions = transactions.filter(transaccion_number__icontains=transaction_number)
+		
+		# Фильтруем по user_id
+		if user_id:
+			transactions = transactions.filter(user_id=user_id)
+		
+		# Ограничиваем количество
+		transactions = transactions.order_by('-created_at')[:limit]
+		
+		result = []
+		for t in transactions:
+			result.append({
+				'id': t.id,
+				'transaccion_number': t.transaccion_number,
+				'order_id': t.order_id,
+				'user_id': t.user_id,
+				'amount': str(t.transacciones_monto),
+				'currency': t.currency,
+				'status': t.estado,
+				'created_at': t.created_at,
+				'processed_at': t.processed_at,
+				'processed_by': t.processed_by
+			})
+		
+		return Response({
+			'success': True,
+			'count': len(result),
+			'transactions': result,
+			'filters': {
+				'number': transaction_number,
+				'user_id': user_id,
+				'limit': limit
+			}
+		})
+		
+	except Exception as e:
+		return Response({
+			'error': str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def test_payment_callback(request):
+	"""
+	Test endpoint для тестирования payment callback
+	"""
+	try:
+		# Создаем тестовую транзакцию если её нет
+		test_order_id = request.data.get('orderid', 'TEST123456')
+		test_amount = request.data.get('amount', '100.00')
+		test_status = request.data.get('status', 'finished')
+		
+		# Проверяем, есть ли такая транзакция
+		transaction = Transaction.objects.filter(transaccion_number=test_order_id).first()
+		
+		if not transaction:
+			# Создаем тестовую транзакцию
+			from datetime import datetime
+			transaction = Transaction.objects.create(
+				user_id='17958522',  # Тестовый user_id
+				transacciones_data=datetime.now(),
+				transacciones_monto=test_amount,
+				estado='esperando',
+				transaccion_number=test_order_id,
+				currency='USD'
+			)
+			print(f"✅ Created test transaction: {test_order_id}")
+		
+		# Теперь вызываем реальный payment_callback
+		test_data = {
+			'orderid': test_order_id,
+			'status': test_status,
+			'amount': test_amount,
+			'currency': 'USD'
+		}
+		
+		# Создаем новый request объект для тестирования
+		from django.test import RequestFactory
+		factory = RequestFactory()
+		test_request = factory.post('/api/payment-callback/', test_data, content_type='application/json')
+		test_request.data = test_data
+		
+		# Вызываем payment_callback
+		response = payment_callback(test_request)
+		
+		return Response({
+			'test_success': True,
+			'test_transaction': {
+				'id': transaction.id,
+				'number': transaction.transaccion_number,
+				'status': transaction.estado
+			},
+			'callback_response': {
+				'status_code': response.status_code,
+				'data': response.data
+			}
+		})
+		
+	except Exception as e:
+		import traceback
+		return Response({
+			'test_success': False,
+			'error': str(e),
+			'traceback': traceback.format_exc()
 		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -100,6 +100,7 @@ class Transaction(models.Model):
 	transacciones_monto = models.DecimalField(max_digits=15, decimal_places=2)
 	estado = models.CharField(max_length=20, default='esperando')
 	transaccion_number = models.CharField(max_length=20, blank=True, null=True)
+	order_id = models.CharField(max_length=255, blank=True, null=True, help_text="ID заказа от платежной системы")
 	metodo_de_pago = models.CharField(max_length=50, blank=True, null=True)
 	amount_usd = models.DecimalField(max_digits=15, decimal_places=2, blank=True, null=True)
 	stage_processed = models.BooleanField(default=False)
