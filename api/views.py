@@ -11,6 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import os
 import decimal
+import requests
 # API: List historial pagos for authenticated user only
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -698,8 +699,6 @@ def payment_callback(request):
 			
 			# Отправляем уведомление в Telegram группу платежей
 			try:
-				import requests
-				
 				# Данные для бота платежей
 				payment_bot_token = '8316441003:AAFOD-t0lCMajM3ksb6EvoEGXgcuARyO2HM'
 				payment_chat_id = '-1003257581324'
