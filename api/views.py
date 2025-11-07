@@ -318,7 +318,6 @@ def hello_world(request):
 	return Response({"message": "Hello, world!"})
 
 
-
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register(request):
@@ -644,42 +643,102 @@ def payment_callback(request):
   currency = data.get('currency', 'USD')
   payment_time = int(data.get('time', datetime.now().timestamp() * 1000))
   
-  # Ищем транзакцию по номеру (order_id = transaccion_number)
-  print(f"🔍 Searching for transaction with number: {order_id}")
+  # Ищем транзакцию по номеру (сначала по transaccion_number, потом по order_id)
+  print(f"🔍 Searching for transaction with order_id: {order_id}")
+  
+  transaction = None
+  search_method = ""
   
   try:
-   # Сначала пробуем точное совпадение
+   # Сначала пробуем найти по transaccion_number
    transaction = Transaction.objects.get(transaccion_number=order_id)
-   print(f"📋 Found transaction: {transaction.transaccion_number} (ID: {transaction.id})")
+   search_method = "transaccion_number"
+   print(f"📋 Found transaction by transaccion_number: {transaction.transaccion_number} (ID: {transaction.id})")
+   
+  except Transaction.DoesNotExist:
+   try:
+    # Если не найдено по transaccion_number, ищем по order_id
+    transaction = Transaction.objects.get(order_id=order_id)
+    search_method = "order_id"
+    print(f"📋 Found transaction by order_id: {transaction.order_id} (ID: {transaction.id})")
+    print(f"   Transaction number: {transaction.transaccion_number}")
+    
+   except Transaction.DoesNotExist:
+    # Если не найдено ни по одному полю
+    print(f"❌ Transaction not found by transaccion_number or order_id: {order_id}")
+    
+    # Попробуем найти похожие транзакции для отладки
+    similar_by_number = Transaction.objects.filter(
+     transaccion_number__icontains=str(order_id)
+    )[:3]
+    
+    similar_by_order_id = Transaction.objects.filter(
+     order_id__icontains=str(order_id)
+    )[:3]
+    
+    if similar_by_number.exists():
+     print(f"🔍 Found {similar_by_number.count()} similar by transaccion_number:")
+     for t in similar_by_number:
+      print(f"   - {t.transaccion_number} (ID: {t.id}, Status: {t.estado})")
+    
+    if similar_by_order_id.exists():
+     print(f"🔍 Found {similar_by_order_id.count()} similar by order_id:")
+     for t in similar_by_order_id:
+      print(f"   - {t.order_id} (ID: {t.id}, Status: {t.estado})")
+    
+    # Также покажем последние транзакции для отладки
+    recent_transactions = Transaction.objects.all().order_by('-created_at')[:5]
+    print(f"📊 Last 5 transactions in database:")
+    for t in recent_transactions:
+     print(f"   - TXN: {t.transaccion_number}, Order: {t.order_id} (ID: {t.id}, User: {t.user_id}, Status: {t.estado})")
+    
+    return Response({
+     "error": "Transaction not found",
+     "order_id": order_id,
+     "message": f"No transaction found with transaccion_number or order_id: {order_id}"
+    }, status=status.HTTP_404_NOT_FOUND)
+   
+   except Transaction.MultipleObjectsReturned:
+    print(f"⚠️ Multiple transactions found with order_id: {order_id}")
+    transactions = Transaction.objects.filter(order_id=order_id)
+    print(f"   Found {transactions.count()} transactions:")
+    for t in transactions:
+     print(f"   - ID: {t.id}, TXN: {t.transaccion_number}, User: {t.user_id}, Status: {t.estado}, Created: {t.created_at}")
+    
+    # Берем самую последнюю транзакцию
+    transaction = transactions.order_by('-created_at').first()
+    search_method = "order_id (latest)"
+    print(f"📋 Using latest transaction: {transaction.id}")
+  
+  except Transaction.MultipleObjectsReturned:
+   print(f"⚠️ Multiple transactions found with transaccion_number: {order_id}")
+   transactions = Transaction.objects.filter(transaccion_number=order_id)
+   print(f"   Found {transactions.count()} transactions:")
+   for t in transactions:
+    print(f"   - ID: {t.id}, User: {t.user_id}, Status: {t.estado}, Created: {t.created_at}")
+   
+   # Берем самую последнюю транзакцию
+   transaction = transactions.order_by('-created_at').first()
+   search_method = "transaccion_number (latest)"
+   print(f"📋 Using latest transaction: {transaction.id}")
+  
+  except Exception as e:
+   print(f"❌ Unexpected error searching for transaction: {e}")
+   return Response({
+    "error": "Database error",
+    "order_id": order_id,
+    "message": str(e)
+   }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+  
+  # Если транзакция найдена, выводим детали
+  if transaction:
+   print(f"✅ Transaction found via {search_method}:")
+   print(f"   ID: {transaction.id}")
+   print(f"   Transaction number: {transaction.transaccion_number}")
+   print(f"   Order ID: {transaction.order_id}")
    print(f"   User ID: {transaction.user_id}")
    print(f"   Amount: {transaction.transacciones_monto} {transaction.currency}")
    print(f"   Current status: {transaction.estado}")
-   
-  except Transaction.DoesNotExist:
-   # Если не найдено, попробуем найти по частичному совпадению или другим вариантам
-   print(f"❌ Transaction not found with exact match: {order_id}")
-   
-   # Попробуем найти похожие транзакции для отладки
-   similar_transactions = Transaction.objects.filter(
-    transaccion_number__icontains=str(order_id)
-   )[:5]
-   
-   if similar_transactions:
-    print(f"🔍 Found {similar_transactions.count()} similar transactions:")
-    for t in similar_transactions:
-     print(f"   - {t.transaccion_number} (ID: {t.id}, Status: {t.estado})")
-   
-   # Также покажем последние транзакции для отладки
-   recent_transactions = Transaction.objects.all().order_by('-created_at')[:5]
-   print(f"📊 Last 5 transactions in database:")
-   for t in recent_transactions:
-    print(f"   - {t.transaccion_number} (ID: {t.id}, User: {t.user_id}, Status: {t.estado})")
-   
-   return Response({
-    "error": "Transaction not found",
-    "order_id": order_id,
-    "message": f"No transaction found with number: {order_id}"
-   }, status=status.HTTP_404_NOT_FOUND)
   
   except Transaction.MultipleObjectsReturned:
    print(f"⚠️ Multiple transactions found with number: {order_id}")
@@ -985,6 +1044,7 @@ def debug_transactions(request):
 	try:
 		# Получаем параметры
 		transaction_number = request.GET.get('number')
+		order_id = request.GET.get('order_id')
 		user_id = request.GET.get('user_id')
 		limit = int(request.GET.get('limit', 10))
 		
@@ -993,6 +1053,10 @@ def debug_transactions(request):
 		# Фильтруем по номеру транзакции
 		if transaction_number:
 			transactions = transactions.filter(transaccion_number__icontains=transaction_number)
+		
+		# Фильтруем по order_id
+		if order_id:
+			transactions = transactions.filter(order_id__icontains=order_id)
 		
 		# Фильтруем по user_id
 		if user_id:
@@ -1022,6 +1086,7 @@ def debug_transactions(request):
 			'transactions': result,
 			'filters': {
 				'number': transaction_number,
+				'order_id': order_id,
 				'user_id': user_id,
 				'limit': limit
 			}
