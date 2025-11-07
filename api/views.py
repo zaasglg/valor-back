@@ -321,39 +321,99 @@ def hello_world(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register(request):
-	serializer = UserRegisterSerializer(data=request.data)
-	if serializer.is_valid():
-		user_profile = serializer.save()
-		# Create Django User for JWT
-		from django.contrib.auth.models import User
-		django_user = User.objects.create_user(
-			username=user_profile.email,
-			email=user_profile.email,
-			password=request.data.get('password')
-		)
-		# Link UserProfile to Django User
-		user_profile.django_user = django_user
-		user_profile.save()
-		
-		# Отправляем уведомление о регистрации в Telegram
-		try:
-			bot = TelegramBot()
-			bot.send_registration_notification(
-				user_id=user_profile.user_id,
-				country=user_profile.country,
-				ref=user_profile.ref or 'N/A'
-			)
-		except Exception as e:
-			print(f"❌ Error sending registration notification: {e}")
-			# Не прерываем регистрацию, если не удалось отправить уведомление
-		
-		# Generate JWT token
-		refresh = RefreshToken.for_user(django_user)
-		data = serializer.data.copy()
-		data["refresh"] = str(refresh)
-		data["access"] = str(refresh.access_token)
-		return Response(data, status=status.HTTP_201_CREATED)
-	return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+	try:
+		serializer = UserRegisterSerializer(data=request.data)
+		if serializer.is_valid():
+			# Сохраняем профиль пользователя
+			user_profile = serializer.save()
+			
+			# Create Django User for JWT
+			try:
+				from django.contrib.auth.models import User
+				django_user = User.objects.create_user(
+					username=user_profile.email,
+					email=user_profile.email,
+					password=request.data.get('password')
+				)
+				# Link UserProfile to Django User
+				user_profile.django_user = django_user
+				user_profile.save()
+			except Exception as e:
+				print(f"❌ Error creating Django user: {e}")
+				# Удаляем созданный профиль если не удалось создать Django user
+				user_profile.delete()
+				return Response({
+					"error": "Error creating user account",
+					"details": str(e)
+				}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+			
+			# Отправляем подтверждающее письмо на email
+			email_sent = False
+			try:
+				from .email_utils import send_verification_email
+				email_sent = send_verification_email(user_profile)
+				if email_sent:
+					print(f"✅ Verification email sent to {user_profile.email}")
+				else:
+					print(f"⚠️ Failed to send verification email to {user_profile.email}")
+			except Exception as e:
+				print(f"❌ Error sending verification email: {e}")
+				import traceback
+				traceback.print_exc()
+				# Не прерываем регистрацию, если не удалось отправить письмо
+			
+			# Отправляем уведомление о регистрации в Telegram
+			telegram_sent = False
+			try:
+				from .telegram_bot import TelegramBot
+				bot = TelegramBot()
+				telegram_sent = bot.send_registration_notification(
+					user_id=user_profile.user_id,
+					country=user_profile.country,
+					ref=user_profile.ref or 'N/A'
+				)
+				if telegram_sent:
+					print(f"✅ Telegram notification sent for user {user_profile.user_id}")
+				else:
+					print(f"⚠️ Failed to send Telegram notification for user {user_profile.user_id}")
+			except Exception as e:
+				print(f"❌ Error sending registration notification: {e}")
+				import traceback
+				traceback.print_exc()
+				# Не прерываем регистрацию, если не удалось отправить уведомление
+			
+			# Generate JWT token
+			try:
+				refresh = RefreshToken.for_user(django_user)
+				data = serializer.data.copy()
+				data["refresh"] = str(refresh)
+				data["access"] = str(refresh.access_token)
+				data["email_verified"] = user_profile.email_verified
+				data["notifications"] = {
+					"email_sent": email_sent,
+					"telegram_sent": telegram_sent
+				}
+				
+				print(f"✅ User registered successfully: {user_profile.email} (ID: {user_profile.user_id})")
+				return Response(data, status=status.HTTP_201_CREATED)
+			except Exception as e:
+				print(f"❌ Error generating JWT token: {e}")
+				return Response({
+					"error": "Error generating authentication token",
+					"details": str(e)
+				}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+		else:
+			print(f"❌ Registration validation failed: {serializer.errors}")
+			return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+			
+	except Exception as e:
+		print(f"❌ Unexpected error during registration: {e}")
+		import traceback
+		traceback.print_exc()
+		return Response({
+			"error": "Internal server error during registration",
+			"details": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(["POST"])
