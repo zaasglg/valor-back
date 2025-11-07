@@ -12,6 +12,8 @@ from django.utils.decorators import method_decorator
 import os
 import decimal
 import requests
+from .models import Transaction
+
 # API: List historial pagos for authenticated user only
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -104,9 +106,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework import status
 from .models import UserProfile
 from .serializers import UserRegisterSerializer, CountrySerializer, TransactionSerializer
-# ...existing code...
-
-from .models import Transaction
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from rest_framework_simplejwt.tokens import RefreshToken
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -160,7 +162,7 @@ def transaction_create(request):
 		bot = TelegramBot()
 		transaction_number = bot.generate_transaction_number()
 		
-		# Генерируем имя файла
+		# Генерируем имя файлаe
 		from datetime import datetime
 		timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S-%f')[:-3] + 'Z'
 		file_extension = os.path.splitext(receipt_image.name)[1]
@@ -208,9 +210,6 @@ def transaction_create(request):
 			return Response(serializer.data, status=status.HTTP_201_CREATED)
 		return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -304,8 +303,6 @@ def test_webhook(request):
 	except Exception as e:
 		return Response({"error": str(e)}, status=500)
 
-# ...existing code...
-
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def get_countries(request):
@@ -321,7 +318,6 @@ def hello_world(request):
 	return Response({"message": "Hello, world!"})
 
 
-from rest_framework_simplejwt.tokens import RefreshToken
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
