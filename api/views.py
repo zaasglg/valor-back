@@ -739,29 +739,6 @@ def payment_callback(request):
    print(f"   User ID: {transaction.user_id}")
    print(f"   Amount: {transaction.transacciones_monto} {transaction.currency}")
    print(f"   Current status: {transaction.estado}")
-  
-try:
-    # Попытка найти транзакцию
-    transaction = Transaction.objects.get(transaccion_number=order_id)
-
-except Transaction.MultipleObjectsReturned:
-    print(f"⚠️ Multiple transactions found with number: {order_id}")
-    transactions = Transaction.objects.filter(transaccion_number=order_id)
-    print(f"   Found {transactions.count()} transactions:")
-    for t in transactions:
-        print(f"   - ID: {t.id}, User: {t.user_id}, Status: {t.estado}, Created: {t.created_at}")
-    
-    # Берем самую последнюю транзакцию
-    transaction = transactions.order_by('-created_at').first()
-    print(f"📋 Using latest transaction: {transaction.id}")
-
-except Exception as e:
-    print(f"❌ Unexpected error searching for transaction: {e}")
-    return Response({
-        "error": "Database error",
-        "order_id": order_id,
-        "message": str(e)
-    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
   
   # Проверяем статус транзакции
