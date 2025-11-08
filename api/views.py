@@ -561,7 +561,9 @@ def get_user_info(request):
 			'stage_balance': user.stage_balance,
 			'verification_start_date': user.verification_start_date,
 			'chicken_trap_coefficient': user.chicken_trap_coefficient,
-			'first_bonus_used': user.first_bonus_used
+			'first_bonus_used': user.first_bonus_used,
+			'email_verified': user.email_verified,
+			'email_verification_token': user.email_verification_token
 		}
 		return Response(data)
 	except UserProfile.DoesNotExist:
