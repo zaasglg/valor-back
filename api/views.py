@@ -1205,3 +1205,110 @@ def test_payment_callback(request):
 			'error': str(e),
 			'traceback': traceback.format_exc()
 		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def verify_email(request, token):
+	"""
+	API endpoint для подтверждения email по токену
+	"""
+	try:
+		# Ищем пользователя по токену верификации
+		user_profile = UserProfile.objects.get(email_verification_token=token)
+		
+		# Проверяем, не подтвержден ли уже email
+		if user_profile.email_verified:
+			return Response({
+				"success": True,
+				"message": "Email уже подтвержден",
+				"already_verified": True
+			}, status=status.HTTP_200_OK)
+		
+		# Подтверждаем email
+		user_profile.email_verified = True
+		user_profile.email_verification_token = None  # Очищаем токен
+		user_profile.save()
+		
+		# Отправляем приветственное письмо
+		try:
+			from .email_utils import send_welcome_email
+			send_welcome_email(user_profile)
+		except Exception as e:
+			print(f"❌ Error sending welcome email: {e}")
+		
+		# Отправляем уведомление в Telegram
+		try:
+			from .telegram_bot import TelegramBot
+			bot = TelegramBot()
+			bot.send_email_verification_notification(
+				user_id=user_profile.user_id,
+				email=user_profile.email
+			)
+		except Exception as e:
+			print(f"❌ Error sending Telegram notification: {e}")
+		
+		return Response({
+			"success": True,
+			"message": "Email успешно подтвержден!",
+			"user_id": user_profile.user_id,
+			"email": user_profile.email
+		}, status=status.HTTP_200_OK)
+		
+	except UserProfile.DoesNotExist:
+		return Response({
+			"success": False,
+			"error": "Неверный токен верификации",
+			"message": "Токен не найден или уже использован"
+		}, status=status.HTTP_404_NOT_FOUND)
+		
+	except Exception as e:
+		return Response({
+			"success": False,
+			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def resend_verification_email(request):
+	"""
+	API endpoint для повторной отправки письма с подтверждением
+	"""
+	try:
+		user_profile = UserProfile.objects.get(django_user=request.user)
+		
+		# Проверяем, не подтвержден ли уже email
+		if user_profile.email_verified:
+			return Response({
+				"success": False,
+				"error": "Email уже подтвержден",
+				"message": "Ваш email уже подтвержден"
+			}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Отправляем письмо с подтверждением
+		from .email_utils import send_verification_email
+		success = send_verification_email(user_profile)
+		
+		if success:
+			return Response({
+				"success": True,
+				"message": "Письмо с подтверждением отправлено",
+				"email": user_profile.email
+			}, status=status.HTTP_200_OK)
+		else:
+			return Response({
+				"success": False,
+				"error": "Не удалось отправить письмо",
+				"message": "Попробуйте позже"
+			}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+		
+	except UserProfile.DoesNotExist:
+		return Response({
+			"error": "User profile not found"
+		}, status=status.HTTP_404_NOT_FOUND)
+	except Exception as e:
+		return Response({
+			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
