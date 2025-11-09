@@ -25,6 +25,18 @@ def historial_pagos_list(request):
 	except UserProfile.DoesNotExist:
 		return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
 	
+	from django.utils import timezone
+	from datetime import timedelta
+	timeout_time = timezone.now() - timedelta(minutes=8)
+	old_payments = HistorialPagos.objects.filter(
+		user_id=user_id,
+		estado='esperando',
+		transacciones_data__lt=timeout_time
+	)
+	deleted_count = old_payments.delete()[0]
+	if deleted_count > 0:
+		print(f"Удалено {deleted_count} старых платежей для пользователя {user_id}")
+	
 	# Filter pagos by user_id
 	pagos = HistorialPagos.objects.filter(user_id=user_id).order_by('-transacciones_data')
 	serializer = HistorialPagosSerializer(pagos, many=True)
@@ -119,6 +131,18 @@ def transactions_list(request):
 		user_id = str(user_profile.user_id)
 	except UserProfile.DoesNotExist:
 		return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+	
+	from django.utils import timezone
+	from datetime import timedelta
+	timeout_time = timezone.now() - timedelta(minutes=8)
+	old_transactions = Transaction.objects.filter(
+		user_id=user_id,
+		estado='esperando',
+		transacciones_data__lt=timeout_time
+	)
+	deleted_count = old_transactions.delete()[0]
+	if deleted_count > 0:
+		print(f"Удалено {deleted_count} старых транзакций для пользователя {user_id}")
 	
 	# Filter transactions by user_id
 	transactions = Transaction.objects.filter(user_id=user_id).order_by('-created_at')
@@ -1300,5 +1324,50 @@ def resend_verification_email(request):
 	except Exception as e:
 		return Response({
 			"error": "Internal server error",
+			"message": str(e)
+		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def cleanup_payment(request):
+	try:
+		orderid = request.data.get('orderid')
+		transaccion_number = request.data.get('transaccion_number')
+		
+		if not orderid and not transaccion_number:
+			return Response({
+				"error": "Требуется orderid или transaccion_number"
+			}, status=status.HTTP_400_BAD_REQUEST)
+		
+		deleted_count = 0
+		
+		# Удаляем из Transaction
+		if orderid:
+			transaction_deleted = Transaction.objects.filter(order_id=orderid).delete()[0]
+			deleted_count += transaction_deleted
+			print(f"Удалено {transaction_deleted} транзакций с order_id={orderid}")
+		
+		if transaccion_number:
+			transaction_deleted = Transaction.objects.filter(transaccion_number=transaccion_number).delete()[0]
+			deleted_count += transaction_deleted
+			print(f"Удалено {transaction_deleted} транзакций с transaccion_number={transaccion_number}")
+		
+		# Удаляем из HistorialPagos
+		if transaccion_number:
+			historial_deleted = HistorialPagos.objects.filter(transaccion_number=transaccion_number).delete()[0]
+			deleted_count += historial_deleted
+			print(f"Удалено {historial_deleted} записей из истории с transaccion_number={transaccion_number}")
+		
+		return Response({
+			"success": True,
+			"deleted_count": deleted_count,
+			"message": f"Удалено {deleted_count} записей"
+		}, status=status.HTTP_200_OK)
+		
+	except Exception as e:
+		print(f"Ошибка при удалении платежа: {e}")
+		return Response({
+			"error": "Ошибка при удалении платежа",
 			"message": str(e)
 		}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
