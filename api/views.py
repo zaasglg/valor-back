@@ -744,20 +744,28 @@ def payment_callback(request):
   
   try:
    # Ищем по любому из полей (OR условие)
-   transaction = Transaction.objects.filter(
+   transactions = Transaction.objects.filter(
     Q(transaccion_number=order_id) |
     Q(transaccion_number=transaccion_number) |
     Q(order_id=order_id) |
     Q(order_id=payment_order_id)
-   ).first()
+   )
    
-   if transaction:
-    if transaction.transaccion_number == order_id or transaction.transaccion_number == transaccion_number:
-     search_method = "transaccion_number"
+   if transactions.exists():
+    if transactions.count() > 1:
+     print(f"⚠️ Multiple transactions found: {transactions.count()}")
+     for t in transactions:
+      print(f"   - ID: {t.id}, TXN: {t.transaccion_number}, Order: {t.order_id}, User: {t.user_id}, Status: {t.estado}, Created: {t.created_at}")
+     transaction = transactions.order_by('-created_at').first()
+     search_method = "multiple (latest)"
+     print(f"📋 Using latest transaction: {transaction.id}")
     else:
-     search_method = "order_id"
-    
-    print(f"📋 Found transaction by {search_method}: {transaction.transaccion_number} (ID: {transaction.id})")
+     transaction = transactions.first()
+     if transaction.transaccion_number == order_id or transaction.transaccion_number == transaccion_number:
+      search_method = "transaccion_number"
+     else:
+      search_method = "order_id"
+     print(f"📋 Found transaction by {search_method}: {transaction.transaccion_number} (ID: {transaction.id})")
    else:
     raise Transaction.DoesNotExist
    
