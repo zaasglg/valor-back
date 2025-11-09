@@ -700,32 +700,44 @@ def payment_callback(request):
   
   # Получаем данные платежа
   order_id = data['orderid']
+  transaccion_number = data.get('transaccion_number', order_id)
+  payment_order_id = data.get('order_id', order_id)
   payment_status = data['status']
   amount = Decimal(str(data['amount']))
   currency = data.get('currency', 'USD')
   payment_time = int(data.get('time', datetime.now().timestamp() * 1000))
   
-  # Ищем транзакцию по номеру (сначала по transaccion_number, потом по order_id)
-  print(f"🔍 Searching for transaction with order_id: {order_id}")
+  # Ищем транзакцию по всем возможным полям
+  print(f"🔍 Searching for transaction:")
+  print(f"   orderid: {order_id}")
+  print(f"   transaccion_number: {transaccion_number}")
+  print(f"   order_id from callback: {payment_order_id}")
+  
+  from django.db.models import Q
   
   transaction = None
   search_method = ""
   
   try:
-   # Сначала пробуем найти по transaccion_number
-   transaction = Transaction.objects.get(transaccion_number=order_id)
-   search_method = "transaccion_number"
-   print(f"📋 Found transaction by transaccion_number: {transaction.transaccion_number} (ID: {transaction.id})")
+   # Ищем по любому из полей (OR условие)
+   transaction = Transaction.objects.filter(
+    Q(transaccion_number=order_id) |
+    Q(transaccion_number=transaccion_number) |
+    Q(order_id=order_id) |
+    Q(order_id=payment_order_id)
+   ).first()
+   
+   if transaction:
+    if transaction.transaccion_number == order_id or transaction.transaccion_number == transaccion_number:
+     search_method = "transaccion_number"
+    else:
+     search_method = "order_id"
+    
+    print(f"📋 Found transaction by {search_method}: {transaction.transaccion_number} (ID: {transaction.id})")
+   else:
+    raise Transaction.DoesNotExist
    
   except Transaction.DoesNotExist:
-   try:
-    # Если не найдено по transaccion_number, ищем по order_id
-    transaction = Transaction.objects.get(order_id=order_id)
-    search_method = "order_id"
-    print(f"📋 Found transaction by order_id: {transaction.order_id} (ID: {transaction.id})")
-    print(f"   Transaction number: {transaction.transaccion_number}")
-    
-   except Transaction.DoesNotExist:
     # Если не найдено ни по одному полю
     print(f"❌ Transaction not found by transaccion_number or order_id: {order_id}")
     
@@ -759,30 +771,6 @@ def payment_callback(request):
      "order_id": order_id,
      "message": f"No transaction found with transaccion_number or order_id: {order_id}"
     }, status=status.HTTP_404_NOT_FOUND)
-   
-   except Transaction.MultipleObjectsReturned:
-    print(f"⚠️ Multiple transactions found with order_id: {order_id}")
-    transactions = Transaction.objects.filter(order_id=order_id)
-    print(f"   Found {transactions.count()} transactions:")
-    for t in transactions:
-     print(f"   - ID: {t.id}, TXN: {t.transaccion_number}, User: {t.user_id}, Status: {t.estado}, Created: {t.created_at}")
-    
-    # Берем самую последнюю транзакцию
-    transaction = transactions.order_by('-created_at').first()
-    search_method = "order_id (latest)"
-    print(f"📋 Using latest transaction: {transaction.id}")
-  
-  except Transaction.MultipleObjectsReturned:
-   print(f"⚠️ Multiple transactions found with transaccion_number: {order_id}")
-   transactions = Transaction.objects.filter(transaccion_number=order_id)
-   print(f"   Found {transactions.count()} transactions:")
-   for t in transactions:
-    print(f"   - ID: {t.id}, User: {t.user_id}, Status: {t.estado}, Created: {t.created_at}")
-   
-   # Берем самую последнюю транзакцию
-   transaction = transactions.order_by('-created_at').first()
-   search_method = "transaccion_number (latest)"
-   print(f"📋 Using latest transaction: {transaction.id}")
   
   except Exception as e:
    print(f"❌ Unexpected error searching for transaction: {e}")
