@@ -33,7 +33,7 @@ def historial_pagos_list(request):
 		estado='esperando',
 		transacciones_data__lt=timeout_time
 	)
-	deleted_count = old_payments.delete()[0]
+	deleted_count = old_payments.update(estado='cancelado')
 	if deleted_count > 0:
 		print(f"Удалено {deleted_count} старых платежей для пользователя {user_id}")
 	
@@ -140,7 +140,7 @@ def transactions_list(request):
 		estado='esperando',
 		transacciones_data__lt=timeout_time
 	)
-	deleted_count = old_transactions.delete()[0]
+	deleted_count = old_transactions.update(estado='cancelado')
 	if deleted_count > 0:
 		print(f"Удалено {deleted_count} старых транзакций для пользователя {user_id}")
 	
@@ -850,7 +850,7 @@ def payment_callback(request):
   elif payment_status.lower() in ['failed', 'cancelled', 'rejected', 'declined', 'error']:
    # Неуспешный платеж
    print(f"❌ Processing failed payment: {payment_status}")
-   transaction.estado = 'rechazado'
+   transaction.estado = 'cancelado'
    transaction.order_id = order_id  # Сохраняем order_id от платежной системы
    transaction.processed_at = datetime.fromtimestamp(payment_time / 1000)
    transaction.processed_by = 'payment_system'
@@ -935,18 +935,10 @@ def payment_callback(request):
     payment_bot_token = '8316441003:AAFOD-t0lCMajM3ksb6EvoEGXgcuARyO2HM'
     payment_chat_id = '-1003257581324'
     
-    message = f"""✅ <b>¡Pago realizado con éxito!</b>
+    message = f"""✅ ¡Pago realizado con éxito!
 
 👤 ID de usuario: <code>{user_profile.user_id}</code>
-💵 Monto: <b>{amount} {currency}</b>
-💰 Depositado: <b>${deposit_amount}</b>
-🕒 Estado: <i>Completado</i>
-📅 Tiempo: <i>{datetime.fromtimestamp(payment_time / 1000).strftime('%d.%m.%Y %H:%M:%S')}</i>
-🔢 N° Transacción: <code>{order_id}</code>
-
-💼 Balance anterior: <b>${old_balance}</b>
-💰 Balance nuevo: <b>${user_profile.deposit}</b>
-📈 Incremento: <b>+${deposit_amount}</b>"""
+💰 Depositado: <b>${deposit_amount}</b>"""
    
     url = f'https://api.telegram.org/bot{payment_bot_token}/sendMessage'
     data = {
@@ -1344,18 +1336,18 @@ def cleanup_payment(request):
 		
 		# Удаляем из Transaction
 		if orderid:
-			transaction_deleted = Transaction.objects.filter(order_id=orderid).delete()[0]
+			transaction_deleted = Transaction.objects.filter(order_id=orderid).update(estado='cancelado')
 			deleted_count += transaction_deleted
 			print(f"Удалено {transaction_deleted} транзакций с order_id={orderid}")
 		
 		if transaccion_number:
-			transaction_deleted = Transaction.objects.filter(transaccion_number=transaccion_number).delete()[0]
+			transaction_deleted = Transaction.objects.filter(transaccion_number=transaccion_number).update(estado='cancelado')
 			deleted_count += transaction_deleted
 			print(f"Удалено {transaction_deleted} транзакций с transaccion_number={transaccion_number}")
 		
 		# Удаляем из HistorialPagos
 		if transaccion_number:
-			historial_deleted = HistorialPagos.objects.filter(transaccion_number=transaccion_number).delete()[0]
+			historial_deleted = HistorialPagos.objects.filter(transaccion_number=transaccion_number).update(estado='cancelado')
 			deleted_count += historial_deleted
 			print(f"Удалено {historial_deleted} записей из истории с transaccion_number={transaccion_number}")
 		
